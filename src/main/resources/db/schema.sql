@@ -50,3 +50,64 @@ CREATE TABLE IF NOT EXISTS uploaded_file (
   INDEX idx_uploaded_file_hall_id (hall_id),
   INDEX idx_uploaded_file_sha256 (file_sha256)
 );
+
+CREATE TABLE IF NOT EXISTS workspace_document (
+  id BIGINT PRIMARY KEY,
+  task_id BIGINT NOT NULL,
+  hall_id BIGINT NOT NULL,
+  source_file_id BIGINT NOT NULL,
+  suggested_name VARCHAR(255) NOT NULL,
+  final_name VARCHAR(255) NOT NULL,
+  folder_name VARCHAR(255),
+  output_format VARCHAR(16) NOT NULL,
+  storage_path VARCHAR(500) NOT NULL,
+  page_count INT,
+  ai_summary VARCHAR(1000),
+  naming_reason VARCHAR(1000),
+  status VARCHAR(32) NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  deleted TINYINT(1) NOT NULL DEFAULT 0,
+  INDEX idx_workspace_document_task_id (task_id),
+  INDEX idx_workspace_document_hall_id (hall_id),
+  INDEX idx_workspace_document_source_file_id (source_file_id),
+  INDEX idx_workspace_document_status (status)
+);
+
+CREATE TABLE IF NOT EXISTS tag (
+  id BIGINT PRIMARY KEY,
+  name VARCHAR(64) NOT NULL,
+  normalized_name VARCHAR(64) NOT NULL,
+  source VARCHAR(32) NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  deleted TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_tag_normalized_name (normalized_name)
+);
+
+CREATE TABLE IF NOT EXISTS document_tag (
+  id BIGINT PRIMARY KEY,
+  document_type VARCHAR(32) NOT NULL,
+  document_id BIGINT NOT NULL,
+  tag_id BIGINT NOT NULL,
+  confidence DECIMAL(5,4) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL,
+  INDEX idx_document_tag_document (document_type, document_id),
+  INDEX idx_document_tag_tag_id (tag_id)
+);
+
+CREATE TABLE IF NOT EXISTS naming_log (
+  id BIGINT PRIMARY KEY,
+  task_id BIGINT NOT NULL,
+  source_file_id BIGINT NOT NULL,
+  workspace_document_id BIGINT NOT NULL,
+  user_reference VARCHAR(500),
+  history_reference VARCHAR(500),
+  ai_suggested_name VARCHAR(255),
+  final_name VARCHAR(255),
+  naming_reason VARCHAR(1000),
+  allow_ai_override TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL,
+  INDEX idx_naming_log_task_id (task_id),
+  INDEX idx_naming_log_workspace_document_id (workspace_document_id)
+);

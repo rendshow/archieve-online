@@ -1,6 +1,6 @@
 package com.danganguan.archive.file.controller;
 
-import com.danganguan.archive.common.response.ApiResponse;
+import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.service.UploadedFileService;
 import org.springframework.web.bind.annotation.*;
@@ -17,19 +17,19 @@ public class UploadedFileController {
     }
 
     @PostMapping("/api/tasks/{taskId}/files")
-    public ApiResponse<List<UploadedFile>> upload(@PathVariable Long taskId,
-                                                  @RequestPart("files") List<MultipartFile> files) {
-        return ApiResponse.ok(uploadedFileService.upload(taskId, files));
+    public Result<List<UploadedFile>> upload(@PathVariable Long taskId,
+                                             @RequestPart("files") List<MultipartFile> files) {
+        return Result.ok(uploadedFileService.upload(taskId, files));
     }
 
     @GetMapping("/api/tasks/{taskId}/files")
-    public ApiResponse<List<UploadedFile>> listByTask(@PathVariable Long taskId) {
-        return ApiResponse.ok(uploadedFileService.listByTask(taskId));
+    public Result<List<UploadedFile>> listByTask(@PathVariable Long taskId) {
+        return Result.ok(uploadedFileService.listByTask(taskId));
     }
 
     @DeleteMapping("/api/uploaded-files/{fileId}")
-    public ApiResponse<Void> delete(@PathVariable Long fileId) {
+    public Result<Void> delete(@PathVariable Long fileId) {
         uploadedFileService.removeById(fileId);
-        return ApiResponse.ok();
+        return Result.ok();
     }
 }

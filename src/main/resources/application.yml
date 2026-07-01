@@ -6,12 +6,14 @@ spring:
     name: danganguan-online
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://localhost:3306/danganguan_online?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/danganguan_online?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
     username: root
     password: 1234
   sql:
     init:
       mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
   servlet:
     multipart:
       max-file-size: 200MB
@@ -20,6 +22,7 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
   global-config:
     db-config:
       id-type: assign_id

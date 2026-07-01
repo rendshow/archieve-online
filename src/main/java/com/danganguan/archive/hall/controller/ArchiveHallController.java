@@ -1,6 +1,6 @@
 package com.danganguan.archive.hall.controller;
 
-import com.danganguan.archive.common.response.ApiResponse;
+import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.hall.entity.ArchiveHall;
 import com.danganguan.archive.hall.service.ArchiveHallService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,7 +19,7 @@ public class ArchiveHallController {
     }
 
     @GetMapping
-    public ApiResponse<List<ArchiveHall>> list() {
-        return ApiResponse.ok(archiveHallService.listOrdered());
+    public Result<List<ArchiveHall>> list() {
+        return Result.ok(archiveHallService.listOrdered());
     }
 }
