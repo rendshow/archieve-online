@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadFileStatus;
+import com.danganguan.archive.file.enums.UploadGroupType;
 import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.file.mapper.UploadedFileMapper;
 import com.danganguan.archive.file.service.UploadedFileService;
@@ -19,6 +20,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.UUID;
 
 @Service
 public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, UploadedFile> implements UploadedFileService {
@@ -40,12 +42,29 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
             throw new BizException("请选择要上传的文件");
         }
 
+        String looseImagesGroupNo = null;
+        int looseImageOrder = 1;
         List<UploadedFile> savedFiles = new ArrayList<>();
         for (MultipartFile file : files) {
             if (file.isEmpty()) {
                 continue;
             }
-            savedFiles.add(saveOne(task, file));
+            String ext = extractExt(file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename());
+            UploadType uploadType = resolveUploadType(ext);
+            UploadGroupType groupType = resolveGroupType(uploadType);
+            String groupNo;
+            int groupOrder;
+            if (groupType == UploadGroupType.LOOSE_IMAGES) {
+                if (looseImagesGroupNo == null) {
+                    looseImagesGroupNo = nextGroupNo(task.getId());
+                }
+                groupNo = looseImagesGroupNo;
+                groupOrder = looseImageOrder++;
+            } else {
+                groupNo = nextGroupNo(task.getId());
+                groupOrder = 1;
+            }
+            savedFiles.add(saveOne(task, file, ext, uploadType, groupType, groupNo, groupOrder));
         }
 
         task.setStatus(TaskStatus.PENDING_PROCESS);
@@ -56,13 +75,17 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
 
     @Override
     public List<UploadedFile> listByTask(Long taskId) {
-        return lambdaQuery().eq(UploadedFile::getTaskId, taskId).orderByDesc(UploadedFile::getCreatedAt).list();
+        return lambdaQuery()
+                .eq(UploadedFile::getTaskId, taskId)
+                .orderByAsc(UploadedFile::getUploadGroupNo)
+                .orderByAsc(UploadedFile::getGroupOrder)
+                .list();
     }
 
-    private UploadedFile saveOne(ArchiveTask task, MultipartFile file) {
+    private UploadedFile saveOne(ArchiveTask task, MultipartFile file, String ext, UploadType uploadType,
+                                 UploadGroupType groupType, String groupNo, int groupOrder) {
         LocalDateTime now = LocalDateTime.now();
         String originalName = file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename();
-        String ext = extractExt(originalName);
         StoredFile storedFile = fileStorageService.saveRaw(task.getId(), file, ext);
 
         UploadedFile uploadedFile = new UploadedFile();
@@ -71,10 +94,13 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
         uploadedFile.setOriginalName(originalName);
         uploadedFile.setFileExt(ext);
         uploadedFile.setMediaType(file.getContentType());
+        uploadedFile.setUploadGroupNo(groupNo);
+        uploadedFile.setGroupType(groupType);
+        uploadedFile.setGroupOrder(groupOrder);
         uploadedFile.setFileSize(storedFile.size());
         uploadedFile.setFileSha256(storedFile.sha256());
         uploadedFile.setStoragePath(storedFile.relativePath());
-        uploadedFile.setUploadType(resolveUploadType(ext));
+        uploadedFile.setUploadType(uploadType);
         uploadedFile.setStatus(UploadFileStatus.SAVED);
         uploadedFile.setCreatedAt(now);
         uploadedFile.setUpdatedAt(now);
@@ -98,5 +124,17 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
             case "zip" -> UploadType.ZIP;
             default -> UploadType.UNKNOWN;
         };
+    }
+
+    private UploadGroupType resolveGroupType(UploadType uploadType) {
+        return switch (uploadType) {
+            case IMAGE -> UploadGroupType.LOOSE_IMAGES;
+            case ZIP -> UploadGroupType.ZIP;
+            case PDF, UNKNOWN -> UploadGroupType.SINGLE_FILE;
+        };
+    }
+
+    private String nextGroupNo(Long taskId) {
+        return "UG" + taskId + "-" + UUID.randomUUID();
     }
 }

@@ -1,7 +1,7 @@
 package com.danganguan.archive.task.dto;
 
-import com.danganguan.archive.task.enums.ConvertStrategy;
 import com.danganguan.archive.task.enums.OutputFormat;
+import com.danganguan.archive.task.enums.PersonSplitStrategy;
 
 public record CreateTaskRequest(
         Long hallId,
@@ -11,8 +11,8 @@ public record CreateTaskRequest(
         String fileNameExample,
         Boolean allowAiOverride,
         Boolean enableScanEnhance,
-        ConvertStrategy convertStrategy,
-        Integer fixedSplitCount,
+        PersonSplitStrategy personSplitStrategy,
+        Integer fixedElementsPerPerson,
         OutputFormat outputFormat
 ) {
 }

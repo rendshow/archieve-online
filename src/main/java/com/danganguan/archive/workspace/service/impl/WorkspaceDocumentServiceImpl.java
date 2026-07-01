@@ -29,7 +29,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentMapper, WorkspaceDocument>
@@ -76,16 +78,22 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         archiveTaskService.updateById(task);
 
         List<WorkspaceDocument> documents = new ArrayList<>();
-        for (UploadedFile file : files) {
+        for (List<UploadedFile> groupFiles : groupFiles(files).values()) {
+            UploadedFile firstFile = groupFiles.get(0);
             WorkspaceDocument existing = lambdaQuery()
                     .eq(WorkspaceDocument::getTaskId, taskId)
-                    .eq(WorkspaceDocument::getSourceFileId, file.getId())
+                    .eq(WorkspaceDocument::getSourceFileId, firstFile.getId())
+                    .last("LIMIT 1")
                     .one();
             if (existing != null) {
-                documents.add(existing);
+                documents.addAll(lambdaQuery()
+                        .eq(WorkspaceDocument::getTaskId, taskId)
+                        .eq(WorkspaceDocument::getSourceFileId, firstFile.getId())
+                        .orderByAsc(WorkspaceDocument::getId)
+                        .list());
                 continue;
             }
-            documents.addAll(createWorkspaceDocuments(task, file));
+            documents.addAll(createWorkspaceDocuments(task, groupFiles));
         }
 
         task.setStatus(TaskStatus.WAITING_REVIEW);
@@ -123,11 +131,23 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         return document;
     }
 
-    private List<WorkspaceDocument> createWorkspaceDocuments(ArchiveTask task, UploadedFile file) {
-        List<ProcessedFileResult> processedFiles = documentProcessingService.process(task, file);
+    private Map<String, List<UploadedFile>> groupFiles(List<UploadedFile> files) {
+        Map<String, List<UploadedFile>> groups = new LinkedHashMap<>();
+        for (UploadedFile file : files) {
+            String groupNo = file.getUploadGroupNo() == null || file.getUploadGroupNo().isBlank()
+                    ? "LEGACY-" + file.getId()
+                    : file.getUploadGroupNo();
+            groups.computeIfAbsent(groupNo, ignored -> new ArrayList<>()).add(file);
+        }
+        return groups;
+    }
+
+    private List<WorkspaceDocument> createWorkspaceDocuments(ArchiveTask task, List<UploadedFile> groupFiles) {
+        UploadedFile firstFile = groupFiles.get(0);
+        List<ProcessedFileResult> processedFiles = documentProcessingService.processGroup(task, groupFiles);
         List<WorkspaceDocument> documents = new ArrayList<>();
         for (ProcessedFileResult processedFile : processedFiles) {
-            documents.add(createWorkspaceDocument(task, file, processedFile));
+            documents.add(createWorkspaceDocument(task, firstFile, processedFile));
         }
         return documents;
     }

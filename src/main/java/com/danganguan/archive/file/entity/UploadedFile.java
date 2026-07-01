@@ -3,6 +3,7 @@ package com.danganguan.archive.file.entity;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.danganguan.archive.file.enums.UploadFileStatus;
+import com.danganguan.archive.file.enums.UploadGroupType;
 import com.danganguan.archive.file.enums.UploadType;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,9 @@ public class UploadedFile {
     private String originalName;
     private String fileExt;
     private String mediaType;
+    private String uploadGroupNo;
+    private UploadGroupType groupType;
+    private Integer groupOrder;
     private Long fileSize;
     private String fileSha256;
     private String storagePath;
@@ -38,6 +42,12 @@ public class UploadedFile {
     public void setFileExt(String fileExt) { this.fileExt = fileExt; }
     public String getMediaType() { return mediaType; }
     public void setMediaType(String mediaType) { this.mediaType = mediaType; }
+    public String getUploadGroupNo() { return uploadGroupNo; }
+    public void setUploadGroupNo(String uploadGroupNo) { this.uploadGroupNo = uploadGroupNo; }
+    public UploadGroupType getGroupType() { return groupType; }
+    public void setGroupType(UploadGroupType groupType) { this.groupType = groupType; }
+    public Integer getGroupOrder() { return groupOrder; }
+    public void setGroupOrder(Integer groupOrder) { this.groupOrder = groupOrder; }
     public Long getFileSize() { return fileSize; }
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
     public String getFileSha256() { return fileSha256; }

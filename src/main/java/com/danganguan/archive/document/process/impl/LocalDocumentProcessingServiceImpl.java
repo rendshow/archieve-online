@@ -7,8 +7,8 @@ import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.file.storage.FileStorageService;
 import com.danganguan.archive.task.entity.ArchiveTask;
-import com.danganguan.archive.task.enums.ConvertStrategy;
 import com.danganguan.archive.task.enums.OutputFormat;
+import com.danganguan.archive.task.enums.PersonSplitStrategy;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -20,6 +20,8 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
@@ -53,6 +55,34 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             case ZIP -> processZip(task, source);
             case UNKNOWN -> throw new BizException("暂不支持的文件类型：" + file.getOriginalName());
         };
+    }
+
+    @Override
+    public List<ProcessedFileResult> processGroup(ArchiveTask task, List<UploadedFile> files) {
+        if (files == null || files.isEmpty()) {
+            throw new BizException("输入组中没有可处理文件");
+        }
+        List<UploadedFile> orderedFiles = files.stream()
+                .sorted(Comparator.comparing(UploadedFile::getGroupOrder, Comparator.nullsLast(Integer::compareTo)))
+                .toList();
+        if (orderedFiles.size() == 1 && orderedFiles.get(0).getUploadType() != UploadType.IMAGE) {
+            return process(task, orderedFiles.get(0));
+        }
+
+        boolean allImages = orderedFiles.stream().allMatch(file -> file.getUploadType() == UploadType.IMAGE);
+        if (!allImages) {
+            List<ProcessedFileResult> results = new ArrayList<>();
+            for (UploadedFile file : orderedFiles) {
+                results.addAll(process(task, file));
+            }
+            return results;
+        }
+
+        List<Path> images = orderedFiles.stream()
+                .map(file -> fileStorageService.resolve(file.getStoragePath()))
+                .toList();
+        String baseName = stripExt(orderedFiles.get(0).getOriginalName());
+        return processImages(task, images, baseName);
     }
 
     private List<ProcessedFileResult> processPdf(ArchiveTask task, Path source, String baseName) {
@@ -141,27 +171,26 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
     }
 
     private List<ProcessedFileResult> imagesToPngByStrategy(ArchiveTask task, List<Path> images, String baseName) {
+        List<List<Path>> groups = groupImages(task, images);
         List<ProcessedFileResult> results = new ArrayList<>();
-        if (task.getConvertStrategy() == ConvertStrategy.ONE_TO_ONE && images.size() == 1) {
-            Path target = workspaceFile(task.getId(), baseName, "png");
-            writeImageAsPng(images.get(0), target);
-            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, 1, ""));
-            return results;
-        }
-        for (int i = 0; i < images.size(); i++) {
-            String suffix = "-第" + (i + 1) + "页";
+        for (int i = 0; i < groups.size(); i++) {
+            List<Path> group = groups.get(i);
+            String suffix = groups.size() == 1 ? "" : "-第" + (i + 1) + "组";
             Path target = workspaceFile(task.getId(), baseName + suffix, "png");
-            writeImageAsPng(images.get(i), target);
-            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, 1, suffix));
+            writeImagesToPng(group, target);
+            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, group.size(), suffix));
         }
         return results;
     }
 
     private List<List<Path>> groupImages(ArchiveTask task, List<Path> images) {
-        if (task.getConvertStrategy() == ConvertStrategy.ONE_TO_FIXED_N) {
-            int fixedCount = task.getFixedSplitCount() == null ? 0 : task.getFixedSplitCount();
+        PersonSplitStrategy strategy = task.getPersonSplitStrategy() == null
+                ? PersonSplitStrategy.SINGLE_PERSON
+                : task.getPersonSplitStrategy();
+        if (strategy.isFixedElementsPerPerson()) {
+            int fixedCount = task.getFixedElementsPerPerson() == null ? 0 : task.getFixedElementsPerPerson();
             if (fixedCount <= 0) {
-                throw new BizException("1换固定N时，固定页数必须大于0");
+                throw new BizException("固定元素数归档时，每人对应元素数必须大于0");
             }
             List<List<Path>> groups = new ArrayList<>();
             for (int i = 0; i < images.size(); i += fixedCount) {
@@ -213,6 +242,34 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             ImageIO.write(readImage(imagePath), "png", target.toFile());
         } catch (IOException ex) {
             throw new BizException("图片转 PNG 失败：" + ex.getMessage());
+        }
+    }
+
+    private void writeImagesToPng(List<Path> images, Path target) {
+        if (images.size() == 1) {
+            writeImageAsPng(images.get(0), target);
+            return;
+        }
+        try {
+            List<BufferedImage> bufferedImages = images.stream().map(this::readImage).toList();
+            int width = bufferedImages.stream().mapToInt(BufferedImage::getWidth).max().orElseThrow();
+            int height = bufferedImages.stream().mapToInt(BufferedImage::getHeight).sum();
+            BufferedImage combined = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+            Graphics2D graphics = combined.createGraphics();
+            try {
+                graphics.setColor(Color.WHITE);
+                graphics.fillRect(0, 0, width, height);
+                int y = 0;
+                for (BufferedImage image : bufferedImages) {
+                    graphics.drawImage(image, 0, y, null);
+                    y += image.getHeight();
+                }
+            } finally {
+                graphics.dispose();
+            }
+            ImageIO.write(combined, "png", target.toFile());
+        } catch (IOException ex) {
+            throw new BizException("图片合并为 PNG 失败：" + ex.getMessage());
         }
     }
 

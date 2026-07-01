@@ -37,6 +37,9 @@ CREATE TABLE IF NOT EXISTS uploaded_file (
   original_name VARCHAR(255) NOT NULL,
   file_ext VARCHAR(32),
   media_type VARCHAR(128),
+  upload_group_no VARCHAR(64),
+  group_type VARCHAR(32),
+  group_order INT,
   file_size BIGINT NOT NULL,
   file_sha256 VARCHAR(128) NOT NULL,
   storage_path VARCHAR(500) NOT NULL,
@@ -48,6 +51,7 @@ CREATE TABLE IF NOT EXISTS uploaded_file (
   deleted TINYINT(1) NOT NULL DEFAULT 0,
   INDEX idx_uploaded_file_task_id (task_id),
   INDEX idx_uploaded_file_hall_id (hall_id),
+  INDEX idx_uploaded_file_group_no (upload_group_no),
   INDEX idx_uploaded_file_sha256 (file_sha256)
 );
 

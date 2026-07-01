@@ -84,3 +84,21 @@
 7. `ONE_TO_ONE` 和 `ONE_TO_DYNAMIC_N`：当前 MVP 先按整组处理，后续接入智能拆分。
 
 真实 OCR、视觉模型、夸克扫描增强暂未接入，但已经预留 `AiNamingService`、`AiTaggingService` 和文档处理服务接口。
+
+## 第六阶段目标
+
+已重构上传输入组和按人归档策略：
+
+1. 任务策略从文件数量映射调整为按人归档策略。
+2. `SINGLE_PERSON`：一个输入组只包含一个人的材料，输出一个档案文件。
+3. `FIXED_ELEMENTS_PER_PERSON`：每 N 个连续输入元素属于一个人，输出多个档案文件。
+4. `AI_PERSON_BOUNDARY`：预留给 AI 判断人员边界，当前 MVP 暂按整组处理。
+5. 每次上传都会生成新的输入组，不会和上一次上传混在一起。
+6. ZIP、PDF 等单文件各自独立成组。
+7. 同一次上传的散图合并为一个 `LOOSE_IMAGES` 输入组。
+
+已有数据库需要手动执行：
+
+```text
+docs/sql/20260702-upload-group-columns.sql
+```

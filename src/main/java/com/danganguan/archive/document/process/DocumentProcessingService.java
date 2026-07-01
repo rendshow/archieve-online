@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface DocumentProcessingService {
     List<ProcessedFileResult> process(ArchiveTask task, UploadedFile file);
+
+    List<ProcessedFileResult> processGroup(ArchiveTask task, List<UploadedFile> files);
 }

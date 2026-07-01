@@ -1,9 +1,10 @@
 package com.danganguan.archive.task.entity;
 
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.danganguan.archive.task.enums.ConvertStrategy;
 import com.danganguan.archive.task.enums.OutputFormat;
+import com.danganguan.archive.task.enums.PersonSplitStrategy;
 import com.danganguan.archive.task.enums.TaskStatus;
 import java.time.LocalDateTime;
 
@@ -18,8 +19,10 @@ public class ArchiveTask {
     private String fileNameExample;
     private Boolean allowAiOverride;
     private Boolean enableScanEnhance;
-    private ConvertStrategy convertStrategy;
-    private Integer fixedSplitCount;
+    @TableField("convert_strategy")
+    private PersonSplitStrategy personSplitStrategy;
+    @TableField("fixed_split_count")
+    private Integer fixedElementsPerPerson;
     private OutputFormat outputFormat;
     private TaskStatus status;
     private String errorMessage;
@@ -47,10 +50,10 @@ public class ArchiveTask {
     public void setAllowAiOverride(Boolean allowAiOverride) { this.allowAiOverride = allowAiOverride; }
     public Boolean getEnableScanEnhance() { return enableScanEnhance; }
     public void setEnableScanEnhance(Boolean enableScanEnhance) { this.enableScanEnhance = enableScanEnhance; }
-    public ConvertStrategy getConvertStrategy() { return convertStrategy; }
-    public void setConvertStrategy(ConvertStrategy convertStrategy) { this.convertStrategy = convertStrategy; }
-    public Integer getFixedSplitCount() { return fixedSplitCount; }
-    public void setFixedSplitCount(Integer fixedSplitCount) { this.fixedSplitCount = fixedSplitCount; }
+    public PersonSplitStrategy getPersonSplitStrategy() { return personSplitStrategy; }
+    public void setPersonSplitStrategy(PersonSplitStrategy personSplitStrategy) { this.personSplitStrategy = personSplitStrategy; }
+    public Integer getFixedElementsPerPerson() { return fixedElementsPerPerson; }
+    public void setFixedElementsPerPerson(Integer fixedElementsPerPerson) { this.fixedElementsPerPerson = fixedElementsPerPerson; }
     public OutputFormat getOutputFormat() { return outputFormat; }
     public void setOutputFormat(OutputFormat outputFormat) { this.outputFormat = outputFormat; }
     public TaskStatus getStatus() { return status; }
