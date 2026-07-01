@@ -111,3 +111,29 @@ CREATE TABLE IF NOT EXISTS naming_log (
   INDEX idx_naming_log_task_id (task_id),
   INDEX idx_naming_log_workspace_document_id (workspace_document_id)
 );
+
+CREATE TABLE IF NOT EXISTS archive_document (
+  id BIGINT PRIMARY KEY,
+  hall_id BIGINT NOT NULL,
+  task_id BIGINT NOT NULL,
+  workspace_document_id BIGINT NOT NULL,
+  archive_no VARCHAR(128) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  folder_name VARCHAR(255),
+  file_format VARCHAR(16) NOT NULL,
+  storage_path VARCHAR(500) NOT NULL,
+  page_count INT,
+  ai_summary VARCHAR(1000),
+  ocr_text LONGTEXT,
+  status VARCHAR(32) NOT NULL,
+  archived_at DATETIME NOT NULL,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  deleted TINYINT(1) NOT NULL DEFAULT 0,
+  UNIQUE KEY uk_archive_document_workspace_document_id (workspace_document_id),
+  UNIQUE KEY uk_archive_document_archive_no (archive_no),
+  INDEX idx_archive_document_hall_id (hall_id),
+  INDEX idx_archive_document_task_id (task_id),
+  INDEX idx_archive_document_title (title),
+  INDEX idx_archive_document_archived_at (archived_at)
+);

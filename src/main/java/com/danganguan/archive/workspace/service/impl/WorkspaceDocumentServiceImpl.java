@@ -7,6 +7,8 @@ import com.danganguan.archive.ai.dto.AiTaggingRequest;
 import com.danganguan.archive.ai.service.AiNamingService;
 import com.danganguan.archive.ai.service.AiTaggingService;
 import com.danganguan.archive.common.exception.BizException;
+import com.danganguan.archive.document.process.DocumentProcessingService;
+import com.danganguan.archive.document.process.ProcessedFileResult;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.service.UploadedFileService;
 import com.danganguan.archive.tag.enums.DocumentType;
@@ -38,19 +40,22 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private final AiTaggingService aiTaggingService;
     private final DocumentTagService documentTagService;
     private final NamingLogService namingLogService;
+    private final DocumentProcessingService documentProcessingService;
 
     public WorkspaceDocumentServiceImpl(ArchiveTaskService archiveTaskService,
                                         UploadedFileService uploadedFileService,
                                         AiNamingService aiNamingService,
                                         AiTaggingService aiTaggingService,
                                         DocumentTagService documentTagService,
-                                        NamingLogService namingLogService) {
+                                        NamingLogService namingLogService,
+                                        DocumentProcessingService documentProcessingService) {
         this.archiveTaskService = archiveTaskService;
         this.uploadedFileService = uploadedFileService;
         this.aiNamingService = aiNamingService;
         this.aiTaggingService = aiTaggingService;
         this.documentTagService = documentTagService;
         this.namingLogService = namingLogService;
+        this.documentProcessingService = documentProcessingService;
     }
 
     @Override
@@ -80,7 +85,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
                 documents.add(existing);
                 continue;
             }
-            documents.add(createWorkspaceDocument(task, file));
+            documents.addAll(createWorkspaceDocuments(task, file));
         }
 
         task.setStatus(TaskStatus.WAITING_REVIEW);
@@ -118,20 +123,30 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         return document;
     }
 
-    private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file) {
+    private List<WorkspaceDocument> createWorkspaceDocuments(ArchiveTask task, UploadedFile file) {
+        List<ProcessedFileResult> processedFiles = documentProcessingService.process(task, file);
+        List<WorkspaceDocument> documents = new ArrayList<>();
+        for (ProcessedFileResult processedFile : processedFiles) {
+            documents.add(createWorkspaceDocument(task, file, processedFile));
+        }
+        return documents;
+    }
+
+    private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file, ProcessedFileResult processedFile) {
         AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file));
         LocalDateTime now = LocalDateTime.now();
+        String suggestedName = appendSuffix(naming.suggestedName(), processedFile.nameSuffix());
 
         WorkspaceDocument document = new WorkspaceDocument();
         document.setTaskId(task.getId());
         document.setHallId(task.getHallId());
         document.setSourceFileId(file.getId());
-        document.setSuggestedName(naming.suggestedName());
-        document.setFinalName(naming.suggestedName());
+        document.setSuggestedName(suggestedName);
+        document.setFinalName(suggestedName);
         document.setFolderName(naming.folderName());
-        document.setOutputFormat(task.getOutputFormat());
-        document.setStoragePath(file.getStoragePath());
-        document.setPageCount(1);
+        document.setOutputFormat(processedFile.outputFormat());
+        document.setStoragePath(processedFile.storagePath());
+        document.setPageCount(processedFile.pageCount());
         document.setAiSummary(naming.summary());
         document.setNamingReason(naming.reason());
         document.setStatus(WorkspaceDocumentStatus.PENDING_REVIEW);
@@ -140,25 +155,32 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         document.setDeleted(0);
         save(document);
 
-        List<String> tags = aiTaggingService.tag(new AiTaggingRequest(task, file, naming.suggestedName())).tags();
+        List<String> tags = aiTaggingService.tag(new AiTaggingRequest(task, file, suggestedName)).tags();
         documentTagService.replaceTags(DocumentType.WORKSPACE, document.getId(), tags, TagSource.AI);
-        saveNamingLog(task, file, document, naming);
+        saveNamingLog(task, file, document, naming, suggestedName);
         return document;
     }
 
-    private void saveNamingLog(ArchiveTask task, UploadedFile file, WorkspaceDocument document, AiNamingResult naming) {
+    private void saveNamingLog(ArchiveTask task, UploadedFile file, WorkspaceDocument document, AiNamingResult naming, String suggestedName) {
         NamingLog log = new NamingLog();
         log.setTaskId(task.getId());
         log.setSourceFileId(file.getId());
         log.setWorkspaceDocumentId(document.getId());
         log.setUserReference(task.getFileNameExample());
         log.setHistoryReference(task.getNamingSource());
-        log.setAiSuggestedName(naming.suggestedName());
+        log.setAiSuggestedName(suggestedName);
         log.setFinalName(document.getFinalName());
         log.setNamingReason(naming.reason());
         log.setAllowAiOverride(task.getAllowAiOverride());
         log.setCreatedAt(LocalDateTime.now());
         namingLogService.save(log);
+    }
+
+    private String appendSuffix(String name, String suffix) {
+        if (suffix == null || suffix.isBlank()) {
+            return name;
+        }
+        return name + suffix;
     }
 
     private void validateNamingReference(ArchiveTask task) {
