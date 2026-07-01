@@ -1,0 +1,26 @@
+# Build output
+target/
+*.class
+
+# Local runtime files
+storage/
+logs/
+*.log
+
+# IDE files
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment overrides
+.env
+.env.*
+application-local.yml
+application-dev.yml
+application-prod.yml
+
+# Maven wrapper cache
+.mvn/wrapper/maven-wrapper.jar
