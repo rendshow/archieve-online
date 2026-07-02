@@ -28,6 +28,8 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -219,8 +221,16 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     }
 
     private List<SourceMaterial> extractZipMaterials(Path zipPath, Path tempDir) throws IOException {
+        try {
+            return extractZipMaterialsWithCharset(zipPath, tempDir, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            return extractZipMaterialsWithCharset(zipPath, tempDir, Charset.forName("GBK"));
+        }
+    }
+
+    private List<SourceMaterial> extractZipMaterialsWithCharset(Path zipPath, Path tempDir, Charset charset) throws IOException {
         List<SourceMaterial> materials = new ArrayList<>();
-        try (ZipInputStream zipInput = new ZipInputStream(Files.newInputStream(zipPath))) {
+        try (ZipInputStream zipInput = new ZipInputStream(Files.newInputStream(zipPath), charset)) {
             ZipEntry entry;
             while ((entry = zipInput.getNextEntry()) != null) {
                 if (entry.isDirectory()) {

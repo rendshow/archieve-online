@@ -20,8 +20,11 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -123,37 +126,45 @@ public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("archive-zip-ocr-");
-            List<String> pieces = new ArrayList<>();
-            try (ZipInputStream zipInput = new ZipInputStream(Files.newInputStream(zipPath))) {
-                ZipEntry entry;
-                while ((entry = zipInput.getNextEntry()) != null) {
-                    if (entry.isDirectory()) {
-                        continue;
-                    }
-                    String filename = entry.getName().replace('\\', '/');
-                    String ext = ext(filename);
-                    if (!isSupportedExt(ext)) {
-                        continue;
-                    }
-                    Path target = tempDir.resolve(UUID.randomUUID() + "-" + Path.of(filename).getFileName()).normalize();
-                    if (!target.startsWith(tempDir)) {
-                        throw new BizException("压缩包内包含非法路径");
-                    }
-                    Files.copy(zipInput, target);
-                    if ("pdf".equals(ext)) {
-                        String text = extractPdfText(target);
-                        pieces.add(text.isBlank() ? renderPdfAndOcr(target) : text);
-                    } else {
-                        pieces.add(ocrImage(target));
-                    }
-                }
+            try {
+                return extractZipTextWithCharset(zipPath, tempDir, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException ex) {
+                return extractZipTextWithCharset(zipPath, tempDir, Charset.forName("GBK"));
             }
-            return String.join("\n", pieces).trim();
         } catch (IOException ex) {
             throw new BizException("压缩包 OCR 失败：" + ex.getMessage());
         } finally {
             deleteTempDir(tempDir);
         }
+    }
+
+    private String extractZipTextWithCharset(Path zipPath, Path tempDir, Charset charset) throws IOException {
+        List<String> pieces = new ArrayList<>();
+        try (ZipInputStream zipInput = new ZipInputStream(Files.newInputStream(zipPath), charset)) {
+            ZipEntry entry;
+            while ((entry = zipInput.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String filename = entry.getName().replace('\\', '/');
+                String ext = ext(filename);
+                if (!isSupportedExt(ext)) {
+                    continue;
+                }
+                Path target = tempDir.resolve(UUID.randomUUID() + "-" + Path.of(filename).getFileName()).normalize();
+                if (!target.startsWith(tempDir)) {
+                    throw new BizException("压缩包内包含非法路径");
+                }
+                Files.copy(zipInput, target, StandardCopyOption.REPLACE_EXISTING);
+                if ("pdf".equals(ext)) {
+                    String text = extractPdfText(target);
+                    pieces.add(text.isBlank() ? renderPdfAndOcr(target) : text);
+                } else {
+                    pieces.add(ocrImage(target));
+                }
+            }
+        }
+        return String.join("\n", pieces).trim();
     }
 
     private String detectPersonName(String text) {
