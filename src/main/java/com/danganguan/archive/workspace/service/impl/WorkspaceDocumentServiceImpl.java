@@ -96,11 +96,6 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
                     .last("LIMIT 1")
                     .one();
             if (existing != null) {
-                documents.addAll(lambdaQuery()
-                        .eq(WorkspaceDocument::getTaskId, taskId)
-                        .eq(WorkspaceDocument::getSourceFileId, firstFile.getId())
-                        .orderByAsc(WorkspaceDocument::getId)
-                        .list());
                 continue;
             }
             documents.addAll(createWorkspaceDocuments(task, groupFiles));

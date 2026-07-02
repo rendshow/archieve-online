@@ -5,6 +5,7 @@ import com.danganguan.archive.ai.dto.AiNamingRequest;
 import com.danganguan.archive.ai.dto.AiNamingResult;
 import com.danganguan.archive.ai.service.AiNamingService;
 import com.danganguan.archive.file.entity.UploadedFile;
+import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.task.entity.ArchiveTask;
 import org.springframework.stereotype.Service;
 
@@ -42,7 +43,7 @@ public class MockAiNamingService implements AiNamingService {
         }
 
         String detectedName = analyzeResult == null ? null : analyzeResult.detectedPersonName();
-        String personName = firstNonBlank(detectedName, parseChineseName(stripExt(file.getOriginalName())), stripExt(file.getOriginalName()));
+        String personName = firstNonBlank(detectedName, parseChineseName(stripExt(file.getOriginalName())), fallbackPersonName(file));
         NamingConvention exampleConvention = parseNumberNameConvention(stripExt(task.getFileNameExample()));
         if (exampleConvention != null) {
             return safeName(exampleConvention.prefix() + formatSequence(sequenceNo, exampleConvention.numberWidth()) + personName);
@@ -75,6 +76,13 @@ public class MockAiNamingService implements AiNamingService {
             return matcher.group(1);
         }
         return null;
+    }
+
+    private String fallbackPersonName(UploadedFile file) {
+        if (file.getUploadType() == UploadType.ZIP) {
+            return "待识别姓名";
+        }
+        return stripExt(file.getOriginalName());
     }
 
     private String formatSequence(Integer sequenceNo, int width) {

@@ -4,6 +4,7 @@ import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
 import com.danganguan.archive.ai.dto.AiNamingRequest;
 import com.danganguan.archive.ai.dto.AiNamingResult;
 import com.danganguan.archive.file.entity.UploadedFile;
+import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.task.entity.ArchiveTask;
 import org.junit.jupiter.api.Test;
 
@@ -35,6 +36,18 @@ class MockAiNamingServiceTest {
         AiNamingResult result = namingService.name(new AiNamingRequest(task, file, analyzeResult, 1));
 
         assertEquals("N2007-JX12•11•21-14尚宇", result.suggestedName());
+    }
+
+    @Test
+    void shouldNotUseZipNameAsPersonNameWhenNoPersonDetected() {
+        ArchiveTask task = taskWithExample("N2007-JX12•11•21-1韩学敏.pdf");
+        UploadedFile file = uploadedFile("N2007-JX12•11•21.zip");
+        file.setUploadType(UploadType.ZIP);
+        DocumentAnalyzeResult analyzeResult = analyzeResult(null);
+
+        AiNamingResult result = namingService.name(new AiNamingRequest(task, file, analyzeResult, 2));
+
+        assertEquals("N2007-JX12•11•21-2待识别姓名", result.suggestedName());
     }
 
     private ArchiveTask taskWithExample(String example) {

@@ -11,6 +11,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.ImageType;
+import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
@@ -19,6 +21,9 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
@@ -32,6 +37,7 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "archive.ai", name = "provider", havingValue = "openai-compatible")
 public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
     private static final int TEXT_LIMIT = 8000;
+    private static final int PDF_VISUAL_PAGE_LIMIT = 3;
 
     private final AiProviderProperties properties;
     private final FileStorageService fileStorageService;
@@ -135,6 +141,13 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                     "type", "image_url",
                     "image_url", Map.of("url", toImageDataUrl(request.processedFile().storagePath()))
             ));
+        } else if (request.processedFile().outputFormat() == OutputFormat.PDF && (extractedText == null || extractedText.isBlank())) {
+            for (String imageDataUrl : renderPdfPagesAsImageDataUrls(request.processedFile().storagePath())) {
+                content.add(Map.of(
+                        "type", "image_url",
+                        "image_url", Map.of("url", imageDataUrl)
+                ));
+            }
         }
         return content;
     }
@@ -173,6 +186,31 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
             return "data:image/png;base64," + base64;
         } catch (IOException ex) {
             throw new BizException("读取待识别图片失败：" + ex.getMessage());
+        }
+    }
+
+    private List<String> renderPdfPagesAsImageDataUrls(String storagePath) {
+        Path pdfPath = fileStorageService.resolve(storagePath);
+        try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
+            PDFRenderer renderer = new PDFRenderer(document);
+            int pages = Math.min(document.getNumberOfPages(), PDF_VISUAL_PAGE_LIMIT);
+            List<String> imageDataUrls = new ArrayList<>();
+            for (int pageIndex = 0; pageIndex < pages; pageIndex++) {
+                BufferedImage image = renderer.renderImageWithDPI(pageIndex, 150, ImageType.RGB);
+                imageDataUrls.add(toPngDataUrl(image));
+            }
+            return imageDataUrls;
+        } catch (IOException ex) {
+            throw new BizException("渲染待识别 PDF 页面失败：" + ex.getMessage());
+        }
+    }
+
+    private String toPngDataUrl(BufferedImage image) {
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            ImageIO.write(image, "png", output);
+            return "data:image/png;base64," + Base64.getEncoder().encodeToString(output.toByteArray());
+        } catch (IOException ex) {
+            throw new BizException("生成待识别图片失败：" + ex.getMessage());
         }
     }
 
