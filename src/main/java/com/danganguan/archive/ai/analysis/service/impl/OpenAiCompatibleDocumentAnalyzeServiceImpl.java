@@ -84,9 +84,10 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                 )
         );
         try {
+            String requestUrl = chatCompletionsUrl(config.getBaseUrl());
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restClient.post()
-                    .uri(config.getBaseUrl())
+                    .uri(requestUrl)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.getApiKey())
                     .body(payload)
@@ -94,8 +95,22 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                     .body(Map.class);
             return extractMessageContent(response);
         } catch (Exception ex) {
-            throw new BizException("外部 AI 文档分析失败：" + ex.getMessage());
+            throw new BizException("外部 AI 文档分析失败：" + ex.getMessage() + "。请检查 base-url 是否为兼容 Chat Completions 的地址。");
         }
+    }
+
+    private String chatCompletionsUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new BizException("未配置外部 AI 接口地址，请设置 ARCHIVE_AI_BASE_URL");
+        }
+        String normalized = baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        if (normalized.endsWith("/chat/completions")) {
+            return normalized;
+        }
+        return normalized + "/chat/completions";
     }
 
     private List<Map<String, Object>> buildUserContent(DocumentAnalyzeRequest request, String extractedText) {

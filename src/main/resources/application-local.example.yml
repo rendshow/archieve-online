@@ -2,7 +2,7 @@ archive:
   ai:
     provider: openai-compatible
     openai-compatible:
-      base-url: https://ark.cn-beijing.volces.com/api/coding/v3
+      base-url: https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions
       api-key: your-api-key
       model: your-model-or-endpoint
       timeout-seconds: 60
