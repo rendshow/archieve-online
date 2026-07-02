@@ -35,10 +35,14 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -49,6 +53,7 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     private static final int PDF_VISUAL_PAGE_LIMIT = 3;
     private static final int MIN_TEXT_LENGTH_BEFORE_VISION = 30;
     private static final int VISION_IMAGE_LIMIT = 6;
+    private static final Pattern PERSON_PATTERN = Pattern.compile("(?:姓名|学生姓名|申请人|负责人)[:：\\s]*([\\u4e00-\\u9fa5]{2,4})");
 
     private final AiProviderProperties properties;
     private final FileStorageService fileStorageService;
@@ -325,6 +330,9 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     }
 
     private DocumentAnalyzeResult parseResult(String content, String fallbackText) {
+        if (content == null || content.isBlank()) {
+            return fallbackResult(fallbackText, "外部 AI 返回空内容，已回退到 OCR/PDF 文本分析。");
+        }
         try {
             Map<String, Object> result = objectMapper.readValue(cleanJson(content), new TypeReference<>() {});
             String extractedText = stringValue(result.get("extractedText"));
@@ -342,7 +350,7 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                     firstNonBlank(reason, "外部 AI 根据文档内容生成分析结果。")
             );
         } catch (JsonProcessingException ex) {
-            throw new BizException("外部 AI 返回内容不是合法 JSON：" + ex.getMessage());
+            return fallbackResult(fallbackText, "外部 AI 返回内容不是合法 JSON，已回退到 OCR/PDF 文本分析：" + ex.getMessage());
         }
     }
 
@@ -356,7 +364,57 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         if (start >= 0 && end >= start) {
             return cleaned.substring(start, end + 1);
         }
-        return cleaned;
+        return "";
+    }
+
+    private DocumentAnalyzeResult fallbackResult(String text, String reason) {
+        String safeText = text == null ? "" : text.trim();
+        String personName = detectPersonName(safeText);
+        List<String> keywords = detectKeywords(safeText);
+        String summary = safeText.isBlank()
+                ? "外部 AI 未返回可解析内容，且 OCR/PDF 文本为空。"
+                : "识别文本：" + limit(safeText.replaceAll("\\s+", " "), 180);
+        return new DocumentAnalyzeResult(
+                limit(safeText, TEXT_LIMIT),
+                summary,
+                personName,
+                keywords,
+                safeText.isBlank() ? new BigDecimal("0.20") : new BigDecimal("0.55"),
+                reason
+        );
+    }
+
+    private String detectPersonName(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Matcher matcher = PERSON_PATTERN.matcher(text);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
+    private List<String> detectKeywords(String text) {
+        Set<String> keywords = new LinkedHashSet<>();
+        String source = text == null ? "" : text;
+        addIfContains(keywords, source, "硕士");
+        addIfContains(keywords, source, "博士");
+        addIfContains(keywords, source, "本科");
+        addIfContains(keywords, source, "财务");
+        addIfContains(keywords, source, "奖学金");
+        addIfContains(keywords, source, "毕业");
+        addIfContains(keywords, source, "学籍");
+        addIfContains(keywords, source, "合同");
+        addIfContains(keywords, source, "证明");
+        addIfContains(keywords, source, "申请");
+        return new ArrayList<>(keywords);
+    }
+
+    private void addIfContains(Set<String> keywords, String source, String keyword) {
+        if (source.contains(keyword)) {
+            keywords.add(keyword);
+        }
     }
 
     private String stringValue(Object value) {
