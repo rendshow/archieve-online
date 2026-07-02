@@ -9,4 +9,6 @@ import java.util.List;
 
 public interface DocumentTagService extends IService<DocumentTag> {
     void replaceTags(DocumentType documentType, Long documentId, List<String> names, TagSource source);
+
+    List<Long> findDocumentIds(DocumentType documentType, Long tagId, String tagName);
 }

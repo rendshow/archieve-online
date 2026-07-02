@@ -1,8 +1,10 @@
 package com.danganguan.archive.workspace.controller;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.task.enums.TaskStatus;
 import com.danganguan.archive.workspace.dto.UpdateWorkspaceNameRequest;
+import com.danganguan.archive.workspace.dto.WorkspaceDocumentQuery;
 import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -36,6 +38,12 @@ public class WorkspaceDocumentController {
     @GetMapping("/api/tasks/{taskId}/workspace-documents")
     public Result<List<WorkspaceDocument>> listByTask(@PathVariable Long taskId) {
         return Result.ok(workspaceDocumentService.listByTask(taskId));
+    }
+
+    @Operation(summary = "分页查询工作区档案", description = "按馆、任务、关键词、文件夹、标签分页查询审核前档案")
+    @GetMapping("/api/workspace-documents")
+    public Result<IPage<WorkspaceDocument>> page(WorkspaceDocumentQuery query) {
+        return Result.ok(workspaceDocumentService.pageDocuments(query));
     }
 
     @Operation(summary = "修改工作区档案名称", description = "修改工作区档案最终采用的文件名")

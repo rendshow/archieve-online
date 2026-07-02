@@ -101,18 +101,23 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
         LambdaQueryWrapper<ArchiveDocument> wrapper = new LambdaQueryWrapper<ArchiveDocument>()
                 .eq(query.hallId() != null, ArchiveDocument::getHallId, query.hallId())
                 .eq(query.taskId() != null, ArchiveDocument::getTaskId, query.taskId())
-                .like(query.keyword() != null && !query.keyword().isBlank(), ArchiveDocument::getTitle, query.keyword())
                 .like(query.folderName() != null && !query.folderName().isBlank(), ArchiveDocument::getFolderName, query.folderName())
                 .orderByDesc(ArchiveDocument::getArchivedAt);
 
-        if (query.tagId() != null) {
-            List<Long> documentIds = documentTagService.lambdaQuery()
-                    .eq(DocumentTag::getDocumentType, DocumentType.ARCHIVE)
-                    .eq(DocumentTag::getTagId, query.tagId())
-                    .list()
-                    .stream()
-                    .map(DocumentTag::getDocumentId)
-                    .toList();
+        if (query.keyword() != null && !query.keyword().isBlank()) {
+            String keyword = query.keyword().trim();
+            wrapper.and(inner -> inner
+                    .like(ArchiveDocument::getTitle, keyword)
+                    .or()
+                    .like(ArchiveDocument::getFolderName, keyword)
+                    .or()
+                    .like(ArchiveDocument::getAiSummary, keyword)
+                    .or()
+                    .like(ArchiveDocument::getOcrText, keyword));
+        }
+
+        if (query.tagId() != null || (query.tagName() != null && !query.tagName().isBlank())) {
+            List<Long> documentIds = documentTagService.findDocumentIds(DocumentType.ARCHIVE, query.tagId(), query.tagName());
             if (documentIds.isEmpty()) {
                 return Page.of(page, size);
             }

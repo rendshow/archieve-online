@@ -1,6 +1,6 @@
-package com.danganguan.archive.document.dto;
+package com.danganguan.archive.workspace.dto;
 
-public record ArchiveDocumentQuery(
+public record WorkspaceDocumentQuery(
         Long hallId,
         Long taskId,
         String keyword,

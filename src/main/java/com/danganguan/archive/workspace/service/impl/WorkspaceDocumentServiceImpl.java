@@ -1,5 +1,8 @@
 package com.danganguan.archive.workspace.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeRequest;
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
@@ -21,6 +24,7 @@ import com.danganguan.archive.task.entity.ArchiveTask;
 import com.danganguan.archive.task.enums.TaskStatus;
 import com.danganguan.archive.task.service.ArchiveTaskService;
 import com.danganguan.archive.workspace.dto.UpdateWorkspaceNameRequest;
+import com.danganguan.archive.workspace.dto.WorkspaceDocumentQuery;
 import com.danganguan.archive.workspace.entity.NamingLog;
 import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.enums.WorkspaceDocumentStatus;
@@ -111,6 +115,41 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     @Override
     public List<WorkspaceDocument> listByTask(Long taskId) {
         return lambdaQuery().eq(WorkspaceDocument::getTaskId, taskId).orderByDesc(WorkspaceDocument::getCreatedAt).list();
+    }
+
+    @Override
+    public IPage<WorkspaceDocument> pageDocuments(WorkspaceDocumentQuery query) {
+        int page = query.page() == null || query.page() < 1 ? 1 : query.page();
+        int size = query.size() == null || query.size() < 1 ? 20 : query.size();
+        LambdaQueryWrapper<WorkspaceDocument> wrapper = new LambdaQueryWrapper<WorkspaceDocument>()
+                .eq(query.hallId() != null, WorkspaceDocument::getHallId, query.hallId())
+                .eq(query.taskId() != null, WorkspaceDocument::getTaskId, query.taskId())
+                .like(query.folderName() != null && !query.folderName().isBlank(), WorkspaceDocument::getFolderName, query.folderName())
+                .orderByDesc(WorkspaceDocument::getCreatedAt);
+
+        if (query.keyword() != null && !query.keyword().isBlank()) {
+            String keyword = query.keyword().trim();
+            wrapper.and(inner -> inner
+                    .like(WorkspaceDocument::getSuggestedName, keyword)
+                    .or()
+                    .like(WorkspaceDocument::getFinalName, keyword)
+                    .or()
+                    .like(WorkspaceDocument::getFolderName, keyword)
+                    .or()
+                    .like(WorkspaceDocument::getAiSummary, keyword)
+                    .or()
+                    .like(WorkspaceDocument::getOcrText, keyword));
+        }
+
+        if (query.tagId() != null || (query.tagName() != null && !query.tagName().isBlank())) {
+            List<Long> documentIds = documentTagService.findDocumentIds(DocumentType.WORKSPACE, query.tagId(), query.tagName());
+            if (documentIds.isEmpty()) {
+                return Page.of(page, size);
+            }
+            wrapper.in(WorkspaceDocument::getId, documentIds);
+        }
+
+        return page(Page.of(page, size), wrapper);
     }
 
     @Override

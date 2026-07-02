@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -44,5 +45,38 @@ public class DocumentTagServiceImpl extends ServiceImpl<DocumentTagMapper, Docum
             documentTag.setCreatedAt(LocalDateTime.now());
             save(documentTag);
         }
+    }
+
+    @Override
+    public List<Long> findDocumentIds(DocumentType documentType, Long tagId, String tagName) {
+        List<Long> tagIds = resolveTagIds(tagId, tagName);
+        if (tagIds.isEmpty()) {
+            return List.of();
+        }
+        return lambdaQuery()
+                .eq(DocumentTag::getDocumentType, documentType)
+                .in(DocumentTag::getTagId, tagIds)
+                .list()
+                .stream()
+                .map(DocumentTag::getDocumentId)
+                .distinct()
+                .toList();
+    }
+
+    private List<Long> resolveTagIds(Long tagId, String tagName) {
+        List<Long> tagIds = new ArrayList<>();
+        if (tagId != null) {
+            tagIds.add(tagId);
+        }
+        if (tagName != null && !tagName.isBlank()) {
+            List<Long> idsByName = tagService.lambdaQuery()
+                    .like(Tag::getName, tagName.trim())
+                    .list()
+                    .stream()
+                    .map(Tag::getId)
+                    .toList();
+            tagIds.addAll(idsByName);
+        }
+        return tagIds.stream().distinct().toList();
     }
 }
