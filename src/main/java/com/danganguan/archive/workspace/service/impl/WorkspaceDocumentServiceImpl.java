@@ -199,7 +199,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
 
     private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file, ProcessedFileResult processedFile) {
         DocumentAnalyzeResult analyzeResult = documentAnalyzeService.analyze(new DocumentAnalyzeRequest(task, file, processedFile));
-        AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file, analyzeResult));
+        AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file, analyzeResult, nextNamingSequence(task.getId())));
         LocalDateTime now = LocalDateTime.now();
         String suggestedName = appendSuffix(naming.suggestedName(), processedFile.nameSuffix());
 
@@ -241,6 +241,10 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         log.setAllowAiOverride(task.getAllowAiOverride());
         log.setCreatedAt(LocalDateTime.now());
         namingLogService.save(log);
+    }
+
+    private int nextNamingSequence(Long taskId) {
+        return Math.toIntExact(lambdaQuery().eq(WorkspaceDocument::getTaskId, taskId).count()) + 1;
     }
 
     private String appendSuffix(String name, String suffix) {
