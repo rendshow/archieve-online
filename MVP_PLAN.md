@@ -127,3 +127,5 @@ ARCHIVE_AI_BASE_URL=兼容接口地址
 ARCHIVE_AI_API_KEY=你的密钥
 ARCHIVE_AI_MODEL=模型名
 ```
+
+本地开发也可以复制 `src/main/resources/application-local.example.yml` 为 `application-local.yml`，填写真实密钥后用 `--spring.profiles.active=local` 启动。`application-local.yml` 已加入 `.gitignore`，不要提交真实密钥。
