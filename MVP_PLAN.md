@@ -102,3 +102,28 @@
 ```text
 docs/sql/20260702-upload-group-columns.sql
 ```
+
+## 第七阶段目标
+
+已接入文档分析层和可配置 AI Provider：
+
+1. 新增 `DocumentAnalyzeService`，统一输出识别文本、摘要、疑似姓名、关键词、置信度和分析理由。
+2. 默认 `local` 实现：PDF 先抽文本层，图片/扫描件暂按文件名和上下文做基础分析。
+3. 新增 `openai-compatible` 实现：可调用兼容 Chat Completions 的外部模型，并支持 PNG 视觉输入。
+4. AI 命名和 AI 标签开始使用文档分析结果，不再只依赖原始文件名。
+5. 工作区档案新增 `ocr_text`，审核归档时同步到正式档案。
+
+已有数据库需要手动执行：
+
+```text
+docs/sql/20260702-workspace-document-analysis.sql
+```
+
+切换外部模型需要设置环境变量：
+
+```text
+ARCHIVE_AI_PROVIDER=openai-compatible
+ARCHIVE_AI_BASE_URL=兼容接口地址
+ARCHIVE_AI_API_KEY=你的密钥
+ARCHIVE_AI_MODEL=模型名
+```

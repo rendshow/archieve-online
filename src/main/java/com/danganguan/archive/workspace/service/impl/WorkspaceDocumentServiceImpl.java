@@ -1,6 +1,9 @@
 package com.danganguan.archive.workspace.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeRequest;
+import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
+import com.danganguan.archive.ai.analysis.service.DocumentAnalyzeService;
 import com.danganguan.archive.ai.dto.AiNamingRequest;
 import com.danganguan.archive.ai.dto.AiNamingResult;
 import com.danganguan.archive.ai.dto.AiTaggingRequest;
@@ -43,6 +46,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private final DocumentTagService documentTagService;
     private final NamingLogService namingLogService;
     private final DocumentProcessingService documentProcessingService;
+    private final DocumentAnalyzeService documentAnalyzeService;
 
     public WorkspaceDocumentServiceImpl(ArchiveTaskService archiveTaskService,
                                         UploadedFileService uploadedFileService,
@@ -50,7 +54,8 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
                                         AiTaggingService aiTaggingService,
                                         DocumentTagService documentTagService,
                                         NamingLogService namingLogService,
-                                        DocumentProcessingService documentProcessingService) {
+                                        DocumentProcessingService documentProcessingService,
+                                        DocumentAnalyzeService documentAnalyzeService) {
         this.archiveTaskService = archiveTaskService;
         this.uploadedFileService = uploadedFileService;
         this.aiNamingService = aiNamingService;
@@ -58,6 +63,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         this.documentTagService = documentTagService;
         this.namingLogService = namingLogService;
         this.documentProcessingService = documentProcessingService;
+        this.documentAnalyzeService = documentAnalyzeService;
     }
 
     @Override
@@ -153,7 +159,8 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     }
 
     private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file, ProcessedFileResult processedFile) {
-        AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file));
+        DocumentAnalyzeResult analyzeResult = documentAnalyzeService.analyze(new DocumentAnalyzeRequest(task, file, processedFile));
+        AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file, analyzeResult));
         LocalDateTime now = LocalDateTime.now();
         String suggestedName = appendSuffix(naming.suggestedName(), processedFile.nameSuffix());
 
@@ -168,6 +175,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         document.setStoragePath(processedFile.storagePath());
         document.setPageCount(processedFile.pageCount());
         document.setAiSummary(naming.summary());
+        document.setOcrText(analyzeResult.extractedText());
         document.setNamingReason(naming.reason());
         document.setStatus(WorkspaceDocumentStatus.PENDING_REVIEW);
         document.setCreatedAt(now);
@@ -175,7 +183,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         document.setDeleted(0);
         save(document);
 
-        List<String> tags = aiTaggingService.tag(new AiTaggingRequest(task, file, suggestedName)).tags();
+        List<String> tags = aiTaggingService.tag(new AiTaggingRequest(task, file, suggestedName, analyzeResult)).tags();
         documentTagService.replaceTags(DocumentType.WORKSPACE, document.getId(), tags, TagSource.AI);
         saveNamingLog(task, file, document, naming, suggestedName);
         return document;

@@ -32,3 +32,10 @@ mybatis-plus:
 
 archive:
   storage-root: storage
+  ai:
+    provider: ${ARCHIVE_AI_PROVIDER:local}
+    openai-compatible:
+      base-url: ${ARCHIVE_AI_BASE_URL:https://api.openai.com/v1/chat/completions}
+      api-key: ${ARCHIVE_AI_API_KEY:}
+      model: ${ARCHIVE_AI_MODEL:}
+      timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}

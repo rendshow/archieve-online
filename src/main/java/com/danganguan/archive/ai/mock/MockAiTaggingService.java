@@ -29,6 +29,13 @@ public class MockAiTaggingService implements AiTaggingService {
         if (name != null && name.contains("硕士")) {
             tags.add("硕士");
         }
+        if (request.analyzeResult() != null) {
+            for (String keyword : request.analyzeResult().keywords()) {
+                if (!tags.contains(keyword)) {
+                    tags.add(keyword);
+                }
+            }
+        }
         return new AiTaggingResult(tags);
     }
 }

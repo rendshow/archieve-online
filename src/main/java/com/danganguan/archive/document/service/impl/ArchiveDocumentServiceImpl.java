@@ -71,7 +71,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
         archiveDocument.setStoragePath(workspaceDocument.getStoragePath());
         archiveDocument.setPageCount(workspaceDocument.getPageCount());
         archiveDocument.setAiSummary(workspaceDocument.getAiSummary());
-        archiveDocument.setOcrText(null);
+        archiveDocument.setOcrText(workspaceDocument.getOcrText());
         archiveDocument.setStatus(ArchiveDocumentStatus.ACTIVE);
         archiveDocument.setArchivedAt(now);
         archiveDocument.setCreatedAt(now);

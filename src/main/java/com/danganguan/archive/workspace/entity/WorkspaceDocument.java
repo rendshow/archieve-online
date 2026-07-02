@@ -20,6 +20,7 @@ public class WorkspaceDocument {
     private String storagePath;
     private Integer pageCount;
     private String aiSummary;
+    private String ocrText;
     private String namingReason;
     private WorkspaceDocumentStatus status;
     private LocalDateTime createdAt;
@@ -49,6 +50,8 @@ public class WorkspaceDocument {
     public void setPageCount(Integer pageCount) { this.pageCount = pageCount; }
     public String getAiSummary() { return aiSummary; }
     public void setAiSummary(String aiSummary) { this.aiSummary = aiSummary; }
+    public String getOcrText() { return ocrText; }
+    public void setOcrText(String ocrText) { this.ocrText = ocrText; }
     public String getNamingReason() { return namingReason; }
     public void setNamingReason(String namingReason) { this.namingReason = namingReason; }
     public WorkspaceDocumentStatus getStatus() { return status; }

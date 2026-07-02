@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS workspace_document (
   storage_path VARCHAR(500) NOT NULL,
   page_count INT,
   ai_summary VARCHAR(1000),
+  ocr_text LONGTEXT,
   naming_reason VARCHAR(1000),
   status VARCHAR(32) NOT NULL,
   created_at DATETIME NOT NULL,

@@ -1,5 +1,6 @@
 package com.danganguan.archive.ai.mock;
 
+import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
 import com.danganguan.archive.ai.dto.AiNamingRequest;
 import com.danganguan.archive.ai.dto.AiNamingResult;
 import com.danganguan.archive.ai.service.AiNamingService;
@@ -16,15 +17,21 @@ public class MockAiNamingService implements AiNamingService {
     public AiNamingResult name(AiNamingRequest request) {
         ArchiveTask task = request.task();
         UploadedFile file = request.file();
-        String baseName = stripExt(file.getOriginalName()).replaceAll("[\\\\/:*?\"<>|]", "_");
+        DocumentAnalyzeResult analyzeResult = request.analyzeResult();
+        String detectedName = analyzeResult == null ? null : analyzeResult.detectedPersonName();
+        String baseName = firstNonBlank(detectedName, stripExt(file.getOriginalName())).replaceAll("[\\\\/:*?\"<>|]", "_");
         String example = firstNonBlank(task.getFileNameExample(), task.getFolderNameExample());
         String prefix = example == null ? "档案" : example;
         String suggestedName = LocalDate.now().getYear() + "-" + prefix + "-" + baseName;
         String folderName = task.getFolderNameExample() == null || task.getFolderNameExample().isBlank()
                 ? "未分类档案"
                 : task.getFolderNameExample();
-        String reason = "MVP mock：参考任务命名示例和原始文件名生成，后续替换为 OCR/视觉模型。";
-        String summary = "由原始文件 " + file.getOriginalName() + " 生成的工作区档案。";
+        String reason = analyzeResult == null
+                ? "MVP mock：参考任务命名示例和原始文件名生成，后续替换为 OCR/视觉模型。"
+                : "MVP mock：参考任务命名示例、原始文件名和本地文档分析结果生成。分析依据：" + analyzeResult.reason();
+        String summary = analyzeResult == null || analyzeResult.summary() == null || analyzeResult.summary().isBlank()
+                ? "由原始文件 " + file.getOriginalName() + " 生成的工作区档案。"
+                : analyzeResult.summary();
         return new AiNamingResult(suggestedName, folderName, summary, reason);
     }
 
