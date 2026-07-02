@@ -6,3 +6,14 @@ archive:
       api-key: your-api-key
       model: your-model-or-endpoint
       timeout-seconds: 60
+  ocr:
+    # 可选：none / tesseract / python
+    provider: none
+    languages: chi_sim+eng
+    timeout-seconds: 30
+    tesseract:
+      command: tesseract
+      psm: 6
+    python:
+      command: python
+      script: scripts/ocr/pytesseract_ocr.py

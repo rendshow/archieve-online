@@ -3,10 +3,13 @@ package com.danganguan.archive.ai.analysis.service.impl;
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeRequest;
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
 import com.danganguan.archive.ai.analysis.service.DocumentAnalyzeService;
+import com.danganguan.archive.ai.ocr.dto.OcrResult;
+import com.danganguan.archive.ai.ocr.service.OcrService;
 import com.danganguan.archive.common.config.AiProviderProperties;
 import com.danganguan.archive.common.exception.BizException;
+import com.danganguan.archive.file.entity.UploadedFile;
+import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.file.storage.FileStorageService;
-import com.danganguan.archive.task.enums.OutputFormat;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,33 +26,42 @@ import org.springframework.web.client.RestClient;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 @Service
 @ConditionalOnProperty(prefix = "archive.ai", name = "provider", havingValue = "openai-compatible")
 public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
     private static final int TEXT_LIMIT = 8000;
     private static final int PDF_VISUAL_PAGE_LIMIT = 3;
+    private static final int MIN_TEXT_LENGTH_BEFORE_VISION = 30;
+    private static final int VISION_IMAGE_LIMIT = 6;
 
     private final AiProviderProperties properties;
     private final FileStorageService fileStorageService;
+    private final OcrService ocrService;
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
 
     public OpenAiCompatibleDocumentAnalyzeServiceImpl(AiProviderProperties properties,
                                                       FileStorageService fileStorageService,
+                                                      OcrService ocrService,
                                                       ObjectMapper objectMapper,
                                                       RestClient.Builder restClientBuilder) {
         this.properties = properties;
         this.fileStorageService = fileStorageService;
+        this.ocrService = ocrService;
         this.objectMapper = objectMapper;
         this.restClientBuilder = restClientBuilder;
     }
@@ -58,9 +70,9 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     public DocumentAnalyzeResult analyze(DocumentAnalyzeRequest request) {
         AiProviderProperties.OpenAiCompatible config = properties.getOpenaiCompatible();
         validateConfig(config);
-        String extractedText = extractPdfTextIfPossible(request);
-        String content = callModel(config, request, extractedText);
-        return parseResult(content, extractedText);
+        SourceAnalysis sourceAnalysis = analyzeSources(request);
+        String content = callModel(config, request, sourceAnalysis);
+        return parseResult(content, sourceAnalysis.text());
     }
 
     private void validateConfig(AiProviderProperties.OpenAiCompatible config) {
@@ -74,7 +86,7 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
 
     private String callModel(AiProviderProperties.OpenAiCompatible config,
                              DocumentAnalyzeRequest request,
-                             String extractedText) {
+                             SourceAnalysis sourceAnalysis) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(config.getTimeoutSeconds() * 1000);
         requestFactory.setReadTimeout(config.getTimeoutSeconds() * 1000);
@@ -86,7 +98,7 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                 "temperature", 0.1,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt()),
-                        Map.of("role", "user", "content", buildUserContent(request, extractedText))
+                        Map.of("role", "user", "content", buildUserContent(request, sourceAnalysis))
                 )
         );
         try {
@@ -119,30 +131,27 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         return normalized + "/chat/completions";
     }
 
-    private List<Map<String, Object>> buildUserContent(DocumentAnalyzeRequest request, String extractedText) {
+    private List<Map<String, Object>> buildUserContent(DocumentAnalyzeRequest request, SourceAnalysis sourceAnalysis) {
         List<Map<String, Object>> content = new ArrayList<>();
+        String extractedText = sourceAnalysis.text();
+        boolean needVision = plainTextLength(extractedText) < MIN_TEXT_LENGTH_BEFORE_VISION;
         String text = """
                 请分析这份档案材料，并只返回 JSON。
                 原始文件名：%s
                 输出文件路径：%s
                 任务文件命名示例：%s
                 任务文件夹命名示例：%s
-                已提取 PDF 文本：%s
+                已提取文本或 OCR 文本：%s
                 """.formatted(
-                request.sourceFile().getOriginalName(),
+                sourceNames(request),
                 request.processedFile().storagePath(),
                 blankToNone(request.task().getFileNameExample()),
                 blankToNone(request.task().getFolderNameExample()),
                 limit(extractedText, TEXT_LIMIT)
         );
         content.add(Map.of("type", "text", "text", text));
-        if (request.processedFile().outputFormat() == OutputFormat.PNG) {
-            content.add(Map.of(
-                    "type", "image_url",
-                    "image_url", Map.of("url", toImageDataUrl(request.processedFile().storagePath()))
-            ));
-        } else if (request.processedFile().outputFormat() == OutputFormat.PDF && (extractedText == null || extractedText.isBlank())) {
-            for (String imageDataUrl : renderPdfPagesAsImageDataUrls(request.processedFile().storagePath())) {
+        if (needVision) {
+            for (String imageDataUrl : sourceAnalysis.visionImageDataUrls().stream().limit(VISION_IMAGE_LIMIT).toList()) {
                 content.add(Map.of(
                         "type", "image_url",
                         "image_url", Map.of("url", imageDataUrl)
@@ -166,11 +175,74 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                 """;
     }
 
-    private String extractPdfTextIfPossible(DocumentAnalyzeRequest request) {
-        if (request.processedFile().outputFormat() != OutputFormat.PDF) {
-            return "";
+    private SourceAnalysis analyzeSources(DocumentAnalyzeRequest request) {
+        Path tempDir = null;
+        try {
+            tempDir = Files.createTempDirectory("archive-source-analyze-");
+            List<SourceMaterial> materials = collectMaterials(request.sourceFiles(), tempDir);
+            List<String> textPieces = new ArrayList<>();
+            List<String> visionImages = new ArrayList<>();
+            for (SourceMaterial material : materials) {
+                if (material.uploadType() == UploadType.PDF) {
+                    String text = extractPdfText(material.path());
+                    if (text.isBlank()) {
+                        List<Path> renderedPages = renderPdfPages(material.path(), tempDir);
+                        textPieces.add(ocrImages(renderedPages));
+                        visionImages.addAll(toImageDataUrls(renderedPages));
+                    } else {
+                        textPieces.add(text);
+                    }
+                } else if (material.uploadType() == UploadType.IMAGE) {
+                    textPieces.add(ocrImage(material.path()));
+                    visionImages.add(toImageDataUrl(material.path()));
+                }
+            }
+            return new SourceAnalysis(String.join("\n", textPieces).trim(), visionImages);
+        } catch (IOException ex) {
+            throw new BizException("源文件分析失败：" + ex.getMessage());
+        } finally {
+            deleteTempDir(tempDir);
         }
-        Path pdfPath = fileStorageService.resolve(request.processedFile().storagePath());
+    }
+
+    private List<SourceMaterial> collectMaterials(List<UploadedFile> sourceFiles, Path tempDir) throws IOException {
+        List<SourceMaterial> materials = new ArrayList<>();
+        for (UploadedFile file : sourceFiles) {
+            Path source = fileStorageService.resolve(file.getStoragePath());
+            if (file.getUploadType() == UploadType.PDF || file.getUploadType() == UploadType.IMAGE) {
+                materials.add(new SourceMaterial(file.getUploadType(), source));
+            } else if (file.getUploadType() == UploadType.ZIP) {
+                materials.addAll(extractZipMaterials(source, tempDir));
+            }
+        }
+        return materials;
+    }
+
+    private List<SourceMaterial> extractZipMaterials(Path zipPath, Path tempDir) throws IOException {
+        List<SourceMaterial> materials = new ArrayList<>();
+        try (ZipInputStream zipInput = new ZipInputStream(Files.newInputStream(zipPath))) {
+            ZipEntry entry;
+            while ((entry = zipInput.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String ext = ext(entry.getName());
+                UploadType uploadType = uploadType(ext);
+                if (uploadType == UploadType.UNKNOWN) {
+                    continue;
+                }
+                Path target = tempDir.resolve(UUID.randomUUID() + "-" + Path.of(entry.getName()).getFileName()).normalize();
+                if (!target.startsWith(tempDir)) {
+                    throw new BizException("压缩包内包含非法路径");
+                }
+                Files.copy(zipInput, target, StandardCopyOption.REPLACE_EXISTING);
+                materials.add(new SourceMaterial(uploadType, target));
+            }
+        }
+        return materials;
+    }
+
+    private String extractPdfText(Path pdfPath) {
         try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
             String text = new PDFTextStripper().getText(document);
             return text == null ? "" : text.trim();
@@ -179,38 +251,46 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         }
     }
 
-    private String toImageDataUrl(String storagePath) {
-        Path imagePath = fileStorageService.resolve(storagePath);
-        try {
-            String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(imagePath));
-            return "data:image/png;base64," + base64;
-        } catch (IOException ex) {
-            throw new BizException("读取待识别图片失败：" + ex.getMessage());
+    private String ocrImages(List<Path> imagePaths) {
+        List<String> pieces = new ArrayList<>();
+        for (Path imagePath : imagePaths) {
+            pieces.add(ocrImage(imagePath));
         }
+        return String.join("\n", pieces).trim();
     }
 
-    private List<String> renderPdfPagesAsImageDataUrls(String storagePath) {
-        Path pdfPath = fileStorageService.resolve(storagePath);
+    private String ocrImage(Path imagePath) {
+        OcrResult result = ocrService.recognize(imagePath);
+        return result.hasText() ? result.text() : "";
+    }
+
+    private List<Path> renderPdfPages(Path pdfPath, Path tempDir) {
         try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
             PDFRenderer renderer = new PDFRenderer(document);
             int pages = Math.min(document.getNumberOfPages(), PDF_VISUAL_PAGE_LIMIT);
-            List<String> imageDataUrls = new ArrayList<>();
+            List<Path> imagePaths = new ArrayList<>();
             for (int pageIndex = 0; pageIndex < pages; pageIndex++) {
                 BufferedImage image = renderer.renderImageWithDPI(pageIndex, 150, ImageType.RGB);
-                imageDataUrls.add(toPngDataUrl(image));
+                Path target = tempDir.resolve("pdf-page-" + UUID.randomUUID() + "-" + pageIndex + ".png");
+                ImageIO.write(image, "png", target.toFile());
+                imagePaths.add(target);
             }
-            return imageDataUrls;
+            return imagePaths;
         } catch (IOException ex) {
             throw new BizException("渲染待识别 PDF 页面失败：" + ex.getMessage());
         }
     }
 
-    private String toPngDataUrl(BufferedImage image) {
-        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            ImageIO.write(image, "png", output);
-            return "data:image/png;base64," + Base64.getEncoder().encodeToString(output.toByteArray());
+    private List<String> toImageDataUrls(List<Path> imagePaths) {
+        return imagePaths.stream().map(this::toImageDataUrl).toList();
+    }
+
+    private String toImageDataUrl(Path imagePath) {
+        try {
+            String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(imagePath));
+            return "data:image/png;base64," + base64;
         } catch (IOException ex) {
-            throw new BizException("生成待识别图片失败：" + ex.getMessage());
+            throw new BizException("读取待识别图片失败：" + ex.getMessage());
         }
     }
 
@@ -313,10 +393,61 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         return value == null || value.isBlank() ? "无" : value;
     }
 
+    private String sourceNames(DocumentAnalyzeRequest request) {
+        return request.sourceFiles().stream()
+                .map(UploadedFile::getOriginalName)
+                .filter(name -> name != null && !name.isBlank())
+                .reduce((left, right) -> left + "、" + right)
+                .orElse("");
+    }
+
+    private int plainTextLength(String text) {
+        return text == null ? 0 : text.replaceAll("\\s+", "").length();
+    }
+
+    private void deleteTempDir(Path tempDir) {
+        if (tempDir == null) {
+            return;
+        }
+        try (var paths = Files.walk(tempDir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                }
+            });
+        } catch (IOException ignored) {
+        }
+    }
+
+    private UploadType uploadType(String ext) {
+        if ("pdf".equals(ext)) {
+            return UploadType.PDF;
+        }
+        return switch (ext) {
+            case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> UploadType.IMAGE;
+            default -> UploadType.UNKNOWN;
+        };
+    }
+
+    private String ext(String filename) {
+        int dot = filename.lastIndexOf('.');
+        if (dot < 0 || dot == filename.length() - 1) {
+            return "";
+        }
+        return filename.substring(dot + 1).toLowerCase();
+    }
+
     private String limit(String value, int maxLength) {
         if (value == null || value.length() <= maxLength) {
             return value == null ? "" : value;
         }
         return value.substring(0, maxLength);
+    }
+
+    private record SourceAnalysis(String text, List<String> visionImageDataUrls) {
+    }
+
+    private record SourceMaterial(UploadType uploadType, Path path) {
     }
 }

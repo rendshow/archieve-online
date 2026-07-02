@@ -185,15 +185,16 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private List<WorkspaceDocument> createWorkspaceDocuments(ArchiveTask task, List<UploadedFile> groupFiles) {
         UploadedFile firstFile = groupFiles.get(0);
         List<ProcessedFileResult> processedFiles = documentProcessingService.processGroup(task, groupFiles);
+        DocumentAnalyzeResult analyzeResult = documentAnalyzeService.analyze(new DocumentAnalyzeRequest(task, groupFiles, processedFiles.get(0)));
         List<WorkspaceDocument> documents = new ArrayList<>();
         for (ProcessedFileResult processedFile : processedFiles) {
-            documents.add(createWorkspaceDocument(task, firstFile, processedFile));
+            documents.add(createWorkspaceDocument(task, firstFile, processedFile, analyzeResult));
         }
         return documents;
     }
 
-    private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file, ProcessedFileResult processedFile) {
-        DocumentAnalyzeResult analyzeResult = documentAnalyzeService.analyze(new DocumentAnalyzeRequest(task, file, processedFile));
+    private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file, ProcessedFileResult processedFile,
+                                                     DocumentAnalyzeResult analyzeResult) {
         AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file, analyzeResult, nextNamingSequence(task.getId())));
         LocalDateTime now = LocalDateTime.now();
         String suggestedName = appendSuffix(naming.suggestedName(), processedFile.nameSuffix());
