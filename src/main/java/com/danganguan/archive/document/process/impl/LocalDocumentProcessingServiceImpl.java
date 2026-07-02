@@ -110,28 +110,13 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         Path tempDir = fileStorageService.prepareWorkspaceFile(task.getId(), "zip-" + UUID.randomUUID()).normalize();
         try {
             Files.createDirectories(tempDir);
-            try (InputStream input = Files.newInputStream(source);
-                 ZipInputStream zipInput = new ZipInputStream(input)) {
-                ZipEntry entry;
-                while ((entry = zipInput.getNextEntry()) != null) {
-                    if (entry.isDirectory()) {
-                        continue;
-                    }
-                    String ext = ext(entry.getName());
-                    if (!isImageExt(ext) && !"pdf".equals(ext)) {
-                        continue;
-                    }
-                    Path target = tempDir.resolve(UUID.randomUUID() + "-" + filename(entry.getName())).normalize();
-                    if (!target.startsWith(tempDir)) {
-                        throw new BizException("压缩包内包含非法路径");
-                    }
-                    Files.copy(zipInput, target, StandardCopyOption.REPLACE_EXISTING);
-                    if ("pdf".equals(ext)) {
-                        pdfFiles.add(target);
-                    } else {
-                        imageFiles.add(target);
-                    }
-                }
+            try {
+                unzipWithCharset(source, tempDir, pdfFiles, imageFiles, java.nio.charset.StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException e) {
+                // Windows ZIP (GBK) fallback
+                pdfFiles.clear();
+                imageFiles.clear();
+                unzipWithCharset(source, tempDir, pdfFiles, imageFiles, java.nio.charset.Charset.forName("GBK"));
             }
         } catch (IOException ex) {
             throw new BizException("解压文件失败：" + ex.getMessage());
@@ -155,6 +140,32 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             throw new BizException("压缩包中没有可处理的 PDF 或图片");
         }
         return results;
+    }
+
+    private void unzipWithCharset(Path source, Path tempDir, List<Path> pdfFiles, List<Path> imageFiles, java.nio.charset.Charset charset) throws IOException {
+        try (InputStream input = Files.newInputStream(source);
+             java.util.zip.ZipInputStream zipInput = new java.util.zip.ZipInputStream(input, charset)) {
+            java.util.zip.ZipEntry entry;
+            while ((entry = zipInput.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String ext = ext(entry.getName());
+                if (!isImageExt(ext) && !"pdf".equals(ext)) {
+                    continue;
+                }
+                Path target = tempDir.resolve(UUID.randomUUID() + "-" + filename(entry.getName())).normalize();
+                if (!target.startsWith(tempDir)) {
+                    throw new BizException("压缩包内包含非法路径");
+                }
+                Files.copy(zipInput, target, StandardCopyOption.REPLACE_EXISTING);
+                if ("pdf".equals(ext)) {
+                    pdfFiles.add(target);
+                } else {
+                    imageFiles.add(target);
+                }
+            }
+        }
     }
 
     private List<ProcessedFileResult> imagesToPdfByStrategy(ArchiveTask task, List<Path> images, String baseName) {

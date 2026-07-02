@@ -2,10 +2,7 @@ archive:
   ai:
     provider: openai-compatible
     openai-compatible:
-      # 填火山方舟/豆包的 OpenAI-compatible Chat Completions 地址。
-      base-url: https://ark.cn-beijing.volces.com/api/v3/chat/completions
-      # 不要把真实 key 写进可提交文件；真实配置写到 application-local.yml。
+      base-url: https://ark.cn-beijing.volces.com/api/coding/v3
       api-key: your-api-key
-      # 填你在火山控制台开通的模型或 endpoint 名称。
       model: your-model-or-endpoint
       timeout-seconds: 60
