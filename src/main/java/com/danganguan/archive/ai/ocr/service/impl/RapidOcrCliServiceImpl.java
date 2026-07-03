@@ -27,7 +27,9 @@ public class RapidOcrCliServiceImpl implements OcrService {
                 imagePath.toAbsolutePath().toString()
         );
         try {
-            Process process = new ProcessBuilder(command).start();
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.environment().put("PYTHONIOENCODING", "utf-8");
+            Process process = processBuilder.start();
             boolean finished = process.waitFor(properties.getTimeoutSeconds(), TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();

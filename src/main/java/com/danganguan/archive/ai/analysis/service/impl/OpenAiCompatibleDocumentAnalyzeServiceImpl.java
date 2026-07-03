@@ -55,7 +55,10 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     private static final int PDF_VISUAL_PAGE_LIMIT = 3;
     private static final int MIN_TEXT_LENGTH_BEFORE_VISION = 30;
     private static final int VISION_IMAGE_LIMIT = 6;
-    private static final Pattern PERSON_PATTERN = Pattern.compile("(?:姓名|学生姓名|申请人|负责人)[:：\\s]*([\\u4e00-\\u9fa5]{2,4})");
+    private static final Pattern PERSON_PATTERN = Pattern.compile(
+            "(?:作者姓名|学生姓名|姓名|申请人|负责人)[:：\\s]*"
+                    + "([\\u4e00-\\u9fa5]{2,4}?)(?=专业|课程|学号|指导教师|导师|职称|所在单位|论文题目|硕士|博士|本科|申请材料|[，,。；;、]|$)"
+    );
 
     private final AiProviderProperties properties;
     private final FileStorageService fileStorageService;
@@ -396,7 +399,8 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         if (text == null || text.isBlank()) {
             return null;
         }
-        Matcher matcher = PERSON_PATTERN.matcher(text);
+        String compactText = text.replaceAll("\\s+", "");
+        Matcher matcher = PERSON_PATTERN.matcher(compactText);
         if (matcher.find()) {
             return matcher.group(1);
         }

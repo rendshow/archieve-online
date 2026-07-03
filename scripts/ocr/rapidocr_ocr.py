@@ -3,6 +3,11 @@ import logging
 
 
 def main():
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8")
+
     if len(sys.argv) < 2:
         print("usage: rapidocr_ocr.py <image_path>", file=sys.stderr)
         return 2

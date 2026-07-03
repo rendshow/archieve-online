@@ -43,7 +43,8 @@ public class MockAiNamingService implements AiNamingService {
         }
 
         String detectedName = analyzeResult == null ? null : analyzeResult.detectedPersonName();
-        String personName = firstNonBlank(detectedName, parseChineseName(stripExt(file.getOriginalName())), fallbackPersonName(file));
+        String sourceName = file.getUploadType() == UploadType.ZIP ? null : parseChineseName(stripExt(file.getOriginalName()));
+        String personName = firstNonBlank(detectedName, sourceName, fallbackPersonName(file));
         NamingConvention exampleConvention = parseNumberNameConvention(stripExt(task.getFileNameExample()));
         if (exampleConvention != null) {
             return safeName(exampleConvention.prefix() + formatSequence(sequenceNo, exampleConvention.numberWidth()) + personName);
