@@ -60,11 +60,20 @@ public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
                 : new BigDecimal("0.70");
         String reason = extractedText == null || extractedText.isBlank()
                 ? "本地分析未提取到正文文本，暂按文件名和任务上下文生成分析结果。"
-                : "本地分析已从 PDF 文本层提取正文，并基于关键词生成分析结果。";
+                : "本地分析已完成 OCR/PDF 文本提取，并基于关键词生成分析结果。";
         return new DocumentAnalyzeResult(limit(extractedText, TEXT_LIMIT), summary, personName, keywords, confidence, reason);
     }
 
     private String extractText(DocumentAnalyzeRequest request) {
+        Path processedPath = fileStorageService.resolve(request.processedFile().storagePath());
+        String processedExt = ext(processedPath.getFileName().toString());
+        if ("pdf".equals(processedExt) && Files.exists(processedPath)) {
+            String pdfText = extractPdfText(processedPath);
+            return pdfText.isBlank() ? renderPdfAndOcr(processedPath) : pdfText;
+        }
+        if (isImageExt(processedExt) && Files.exists(processedPath)) {
+            return ocrImage(processedPath);
+        }
         List<String> pieces = new ArrayList<>();
         for (UploadedFile file : request.sourceFiles()) {
             Path source = fileStorageService.resolve(file.getStoragePath());
@@ -238,6 +247,13 @@ public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
 
     private boolean isSupportedExt(String ext) {
         return "pdf".equals(ext) || switch (ext) {
+            case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isImageExt(String ext) {
+        return switch (ext.toLowerCase()) {
             case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> true;
             default -> false;
         };

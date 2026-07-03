@@ -87,27 +87,48 @@ public class DocumentFileController {
     }
 
     private MediaType mediaType(Path path, OutputFormat format) {
-        if (format == OutputFormat.PDF || path.toString().toLowerCase().endsWith(".pdf")) {
+        String ext = ext(path.getFileName().toString());
+        if (format == OutputFormat.PDF || "pdf".equals(ext)) {
             return MediaType.APPLICATION_PDF;
         }
-        if (format == OutputFormat.PNG || path.toString().toLowerCase().endsWith(".png")) {
-            return MediaType.IMAGE_PNG;
-        }
-        return MediaType.APPLICATION_OCTET_STREAM;
+        return switch (ext) {
+            case "jpg", "jpeg" -> MediaType.IMAGE_JPEG;
+            case "png" -> MediaType.IMAGE_PNG;
+            case "webp" -> MediaType.parseMediaType("image/webp");
+            case "bmp" -> MediaType.parseMediaType("image/bmp");
+            case "tif", "tiff" -> MediaType.parseMediaType("image/tiff");
+            default -> format == OutputFormat.PNG ? MediaType.IMAGE_PNG : MediaType.APPLICATION_OCTET_STREAM;
+        };
     }
 
     private String filename(String name, Path path, OutputFormat format) {
         String safeName = safeName(name == null || name.isBlank() ? stripExt(path.getFileName().toString()) : name);
-        String ext = format == OutputFormat.PNG ? ".png" : ".pdf";
+        String ext = "." + outputExt(path, format);
         if (safeName.toLowerCase().endsWith(ext)) {
             return safeName;
         }
         return safeName + ext;
     }
 
+    private String outputExt(Path path, OutputFormat format) {
+        String ext = ext(path.getFileName().toString());
+        if (!ext.isBlank()) {
+            return ext;
+        }
+        return format == OutputFormat.PNG ? "png" : "pdf";
+    }
+
     private String stripExt(String filename) {
         int dot = filename.lastIndexOf('.');
         return dot < 0 ? filename : filename.substring(0, dot);
+    }
+
+    private String ext(String filename) {
+        int dot = filename.lastIndexOf('.');
+        if (dot < 0 || dot == filename.length() - 1) {
+            return "";
+        }
+        return filename.substring(dot + 1).toLowerCase();
     }
 
     private String safeName(String name) {

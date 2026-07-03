@@ -48,6 +48,9 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
             }
             String ext = extractExt(file.getOriginalFilename() == null ? "unknown" : file.getOriginalFilename());
             UploadType uploadType = resolveUploadType(ext);
+            if (uploadType != UploadType.ZIP) {
+                throw new BizException("当前 MVP 仅支持上传图片压缩包（.zip）");
+            }
             UploadGroupType groupType = resolveGroupType(uploadType);
             String groupNo;
             int groupOrder;

@@ -176,7 +176,10 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("archive-source-analyze-");
-            List<SourceMaterial> materials = collectMaterials(request.sourceFiles(), tempDir);
+            List<SourceMaterial> materials = collectProcessedMaterial(request.processedFile().storagePath());
+            if (materials.isEmpty()) {
+                materials = collectMaterials(request.sourceFiles(), tempDir);
+            }
             List<String> textPieces = new ArrayList<>();
             List<String> visionImages = new ArrayList<>();
             for (SourceMaterial material : materials) {
@@ -200,6 +203,21 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         } finally {
             deleteTempDir(tempDir);
         }
+    }
+
+    private List<SourceMaterial> collectProcessedMaterial(String storagePath) {
+        Path processedPath = fileStorageService.resolve(storagePath);
+        if (!Files.exists(processedPath)) {
+            return List.of();
+        }
+        String ext = ext(processedPath.getFileName().toString());
+        if ("pdf".equals(ext)) {
+            return List.of(new SourceMaterial(UploadType.PDF, processedPath));
+        }
+        if (isImageExt(ext)) {
+            return List.of(new SourceMaterial(UploadType.IMAGE, processedPath));
+        }
+        return List.of();
     }
 
     private List<SourceMaterial> collectMaterials(List<UploadedFile> sourceFiles, Path tempDir) throws IOException {
@@ -293,7 +311,7 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     private String toImageDataUrl(Path imagePath) {
         try {
             String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(imagePath));
-            return "data:image/png;base64," + base64;
+            return "data:" + imageMediaType(imagePath) + ";base64," + base64;
         } catch (IOException ex) {
             throw new BizException("读取待识别图片失败：" + ex.getMessage());
         }
@@ -485,6 +503,23 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
         return switch (ext) {
             case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> UploadType.IMAGE;
             default -> UploadType.UNKNOWN;
+        };
+    }
+
+    private boolean isImageExt(String ext) {
+        return switch (ext.toLowerCase()) {
+            case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> true;
+            default -> false;
+        };
+    }
+
+    private String imageMediaType(Path imagePath) {
+        return switch (ext(imagePath.getFileName().toString())) {
+            case "jpg", "jpeg" -> MediaType.IMAGE_JPEG_VALUE;
+            case "webp" -> "image/webp";
+            case "bmp" -> "image/bmp";
+            case "tif", "tiff" -> "image/tiff";
+            default -> MediaType.IMAGE_PNG_VALUE;
         };
     }
 

@@ -2,6 +2,7 @@ package com.danganguan.archive.document.process.impl;
 
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.process.DocumentProcessingService;
+import com.danganguan.archive.document.process.ImageEnhanceService;
 import com.danganguan.archive.document.process.ProcessedFileResult;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadType;
@@ -16,16 +17,14 @@ import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
-import org.apache.pdfbox.rendering.ImageType;
-import org.apache.pdfbox.rendering.PDFRenderer;
 import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
-import java.awt.Color;
-import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -43,16 +42,14 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
     private static final float PDF_MARGIN = 24F;
 
     private final FileStorageService fileStorageService;
+    private final ImageEnhanceService imageEnhanceService;
 
     @Override
     public List<ProcessedFileResult> process(ArchiveTask task, UploadedFile file) {
-        Path source = fileStorageService.resolve(file.getStoragePath());
-        return switch (file.getUploadType()) {
-            case PDF -> processPdf(task, source, stripExt(file.getOriginalName()));
-            case IMAGE -> processImages(task, List.of(source), stripExt(file.getOriginalName()));
-            case ZIP -> processZip(task, source);
-            case UNKNOWN -> throw new BizException("暂不支持的文件类型：" + file.getOriginalName());
-        };
+        if (file.getUploadType() != UploadType.ZIP) {
+            throw new BizException("当前处理链路仅支持图片压缩包（.zip）");
+        }
+        return processImageZip(task, file);
     }
 
     @Override
@@ -63,168 +60,156 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         List<UploadedFile> orderedFiles = files.stream()
                 .sorted(Comparator.comparing(UploadedFile::getGroupOrder, Comparator.nullsLast(Integer::compareTo)))
                 .toList();
-        if (orderedFiles.size() == 1 && orderedFiles.get(0).getUploadType() != UploadType.IMAGE) {
-            return process(task, orderedFiles.get(0));
-        }
-
-        boolean allImages = orderedFiles.stream().allMatch(file -> file.getUploadType() == UploadType.IMAGE);
-        if (!allImages) {
-            List<ProcessedFileResult> results = new ArrayList<>();
-            for (UploadedFile file : orderedFiles) {
-                results.addAll(process(task, file));
-            }
-            return results;
-        }
-
-        List<Path> images = orderedFiles.stream()
-                .map(file -> fileStorageService.resolve(file.getStoragePath()))
-                .toList();
-        String baseName = stripExt(orderedFiles.get(0).getOriginalName());
-        return processImages(task, images, baseName);
-    }
-
-    private List<ProcessedFileResult> processPdf(ArchiveTask task, Path source, String baseName) {
-        if (task.getOutputFormat() == OutputFormat.PDF) {
-            Path target = workspaceFile(task.getId(), baseName, "pdf");
-            copy(source, target);
-            return List.of(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PDF, countPdfPages(target), ""));
-        }
-        return renderPdfToPng(task.getId(), source, baseName);
-    }
-
-    private List<ProcessedFileResult> processImages(ArchiveTask task, List<Path> images, String baseName) {
-        if (images.isEmpty()) {
-            throw new BizException("没有可处理的图片");
-        }
-        if (task.getOutputFormat() == OutputFormat.PDF) {
-            return imagesToPdfByStrategy(task, images, baseName);
-        }
-        return imagesToPngByStrategy(task, images, baseName);
-    }
-
-    private List<ProcessedFileResult> processZip(ArchiveTask task, Path source) {
-        List<Path> pdfFiles = new ArrayList<>();
-        List<Path> imageFiles = new ArrayList<>();
-        Path tempDir = fileStorageService.prepareWorkspaceFile(task.getId(), "zip-" + UUID.randomUUID()).normalize();
-        try {
-            Files.createDirectories(tempDir);
-            try {
-                unzipWithCharset(source, tempDir, pdfFiles, imageFiles, java.nio.charset.StandardCharsets.UTF_8);
-            } catch (IllegalArgumentException e) {
-                // Windows ZIP (GBK) fallback
-                pdfFiles.clear();
-                imageFiles.clear();
-                unzipWithCharset(source, tempDir, pdfFiles, imageFiles, java.nio.charset.Charset.forName("GBK"));
-            }
-        } catch (IOException ex) {
-            throw new BizException("解压文件失败：" + ex.getMessage());
-        }
-
-        pdfFiles.sort(Comparator.comparing(Path::toString));
-        imageFiles.sort(Comparator.comparing(Path::toString));
-
         List<ProcessedFileResult> results = new ArrayList<>();
-        int pdfIndex = 1;
-        for (Path pdf : pdfFiles) {
-            for (ProcessedFileResult result : processPdf(task, pdf, stripExt(pdf.getFileName().toString()))) {
-                results.add(withSuffix(result, "-PDF" + pdfIndex));
-            }
-            pdfIndex++;
-        }
-        if (!imageFiles.isEmpty()) {
-            results.addAll(processImages(task, imageFiles, stripExt(source.getFileName().toString())));
-        }
-        if (results.isEmpty()) {
-            throw new BizException("压缩包中没有可处理的 PDF 或图片");
+        for (UploadedFile file : orderedFiles) {
+            results.addAll(process(task, file));
         }
         return results;
     }
 
-    private void unzipWithCharset(Path source, Path tempDir, List<Path> pdfFiles, List<Path> imageFiles, java.nio.charset.Charset charset) throws IOException {
+    private List<ProcessedFileResult> processImageZip(ArchiveTask task, UploadedFile file) {
+        Path source = fileStorageService.resolve(file.getStoragePath());
+        ZipImageArchive archive = extractImageZip(task.getId(), source);
+        try {
+            List<ImageInput> images = enhanceImagesIfNeeded(task, archive.images());
+            if (task.getOutputFormat() == OutputFormat.PNG) {
+                return imagesToImageFiles(task, images, stripExt(file.getOriginalName()));
+            }
+            return imagesToPdfByStrategy(task, images, stripExt(file.getOriginalName()));
+        } finally {
+            deleteTempDir(archive.tempDir());
+        }
+    }
+
+    private ZipImageArchive extractImageZip(Long taskId, Path source) {
+        Path tempDir = fileStorageService.prepareWorkspaceFile(taskId, "zip-" + UUID.randomUUID()).normalize();
+        try {
+            Files.createDirectories(tempDir);
+            List<ImageInput> images = new ArrayList<>();
+            try {
+                unzipImagesWithCharset(source, tempDir, images, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException ex) {
+                clearDirectory(tempDir);
+                unzipImagesWithCharset(source, tempDir, images, Charset.forName("GBK"));
+            }
+            images.sort((left, right) -> naturalCompare(left.entryName(), right.entryName()));
+            if (images.isEmpty()) {
+                throw new BizException("压缩包中没有可处理的图片");
+            }
+            return new ZipImageArchive(tempDir, images);
+        } catch (IOException ex) {
+            deleteTempDir(tempDir);
+            throw new BizException("解压图片压缩包失败：" + ex.getMessage());
+        } catch (RuntimeException ex) {
+            deleteTempDir(tempDir);
+            throw ex;
+        }
+    }
+
+    private void unzipImagesWithCharset(Path source, Path tempDir, List<ImageInput> images, Charset charset) throws IOException {
         try (InputStream input = Files.newInputStream(source);
-             java.util.zip.ZipInputStream zipInput = new java.util.zip.ZipInputStream(input, charset)) {
-            java.util.zip.ZipEntry entry;
+             ZipInputStream zipInput = new ZipInputStream(input, charset)) {
+            ZipEntry entry;
+            int order = images.size();
             while ((entry = zipInput.getNextEntry()) != null) {
                 if (entry.isDirectory()) {
                     continue;
                 }
-                String ext = ext(entry.getName());
-                if (!isImageExt(ext) && !"pdf".equals(ext)) {
+                String entryName = entry.getName().replace('\\', '/');
+                String ext = ext(entryName);
+                if ("pdf".equals(ext)) {
+                    throw new BizException("当前仅支持图片压缩包，压缩包内发现 PDF：" + filename(entryName));
+                }
+                if (!isImageExt(ext)) {
                     continue;
                 }
-                Path target = tempDir.resolve(UUID.randomUUID() + "-" + filename(entry.getName())).normalize();
+                String originalFilename = filename(entryName);
+                Path target = tempDir.resolve(UUID.randomUUID() + "-" + originalFilename).normalize();
                 if (!target.startsWith(tempDir)) {
                     throw new BizException("压缩包内包含非法路径");
                 }
                 Files.copy(zipInput, target, StandardCopyOption.REPLACE_EXISTING);
-                if ("pdf".equals(ext)) {
-                    pdfFiles.add(target);
-                } else {
-                    imageFiles.add(target);
-                }
+                images.add(new ImageInput(target, entryName, stripExt(originalFilename), normalizeImageExt(ext), ++order));
             }
         }
     }
 
-    private List<ProcessedFileResult> imagesToPdfByStrategy(ArchiveTask task, List<Path> images, String baseName) {
-        List<List<Path>> groups = groupImages(task, images);
+    private List<ImageInput> enhanceImagesIfNeeded(ArchiveTask task, List<ImageInput> images) {
+        if (!Boolean.TRUE.equals(task.getEnableScanEnhance())) {
+            return images;
+        }
+        List<ImageInput> enhancedImages = new ArrayList<>();
+        for (ImageInput image : images) {
+            Path enhancedPath = imageEnhanceService.enhance(task, image.path());
+            if (enhancedPath == null) {
+                throw new BizException("扫描图像增强未返回有效图片");
+            }
+            String enhancedExt = ext(enhancedPath.getFileName().toString());
+            enhancedImages.add(new ImageInput(
+                    enhancedPath,
+                    image.entryName(),
+                    image.baseName(),
+                    isImageExt(enhancedExt) ? normalizeImageExt(enhancedExt) : image.ext(),
+                    image.order()
+            ));
+        }
+        return enhancedImages;
+    }
+
+    private List<ProcessedFileResult> imagesToImageFiles(ArchiveTask task, List<ImageInput> images, String baseName) {
+        if (!splitStrategy(task).isSinglePerson()) {
+            throw new BizException("输出为图片时仅支持单人单组策略，固定元素拆分和 AI 边界拆分只支持 PDF 输出");
+        }
+        List<ProcessedFileResult> results = new ArrayList<>();
+        for (int i = 0; i < images.size(); i++) {
+            ImageInput image = images.get(i);
+            String suffix = images.size() == 1 ? "" : "-第" + (i + 1) + "张";
+            Path target = workspaceFile(task.getId(), firstNonBlank(image.baseName(), baseName) + suffix, image.ext());
+            copy(image.path(), target);
+            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, 1, ""));
+        }
+        return results;
+    }
+
+    private List<ProcessedFileResult> imagesToPdfByStrategy(ArchiveTask task, List<ImageInput> images, String baseName) {
+        List<List<ImageInput>> groups = groupImages(task, images);
         List<ProcessedFileResult> results = new ArrayList<>();
         for (int i = 0; i < groups.size(); i++) {
-            List<Path> group = groups.get(i);
+            List<ImageInput> group = groups.get(i);
             String suffix = groups.size() == 1 ? "" : "-第" + (i + 1) + "组";
             Path target = workspaceFile(task.getId(), baseName + suffix, "pdf");
-            writeImagesToPdf(group, target);
-            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PDF, group.size(), suffix));
+            writeImagesToPdf(group.stream().map(ImageInput::path).toList(), target);
+            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PDF, group.size(), ""));
         }
         return results;
     }
 
-    private List<ProcessedFileResult> imagesToPngByStrategy(ArchiveTask task, List<Path> images, String baseName) {
-        List<List<Path>> groups = groupImages(task, images);
-        List<ProcessedFileResult> results = new ArrayList<>();
-        for (int i = 0; i < groups.size(); i++) {
-            List<Path> group = groups.get(i);
-            String suffix = groups.size() == 1 ? "" : "-第" + (i + 1) + "组";
-            Path target = workspaceFile(task.getId(), baseName + suffix, "png");
-            writeImagesToPng(group, target);
-            results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, group.size(), suffix));
-        }
-        return results;
-    }
-
-    private List<List<Path>> groupImages(ArchiveTask task, List<Path> images) {
-        PersonSplitStrategy strategy = task.getPersonSplitStrategy() == null
-                ? PersonSplitStrategy.SINGLE_PERSON
-                : task.getPersonSplitStrategy();
+    private List<List<ImageInput>> groupImages(ArchiveTask task, List<ImageInput> images) {
+        PersonSplitStrategy strategy = splitStrategy(task);
         if (strategy.isFixedElementsPerPerson()) {
             int fixedCount = task.getFixedElementsPerPerson() == null ? 0 : task.getFixedElementsPerPerson();
             if (fixedCount <= 0) {
                 throw new BizException("固定元素数归档时，每人对应元素数必须大于0");
             }
-            List<List<Path>> groups = new ArrayList<>();
+            if (images.size() % fixedCount != 0) {
+                throw new BizException("固定元素数拆分要求图片总数必须是 n 的倍数：当前图片数 "
+                        + images.size() + "，每人元素数 " + fixedCount);
+            }
+            List<List<ImageInput>> groups = new ArrayList<>();
             for (int i = 0; i < images.size(); i += fixedCount) {
-                groups.add(images.subList(i, Math.min(i + fixedCount, images.size())));
+                groups.add(images.subList(i, i + fixedCount));
             }
             return groups;
+        }
+        if (strategy.isAiPersonBoundary()) {
+            return splitImagesByAiBoundary(images);
         }
         return List.of(images);
     }
 
-    private List<ProcessedFileResult> renderPdfToPng(Long taskId, Path source, String baseName) {
-        try (PDDocument document = PDDocument.load(source.toFile())) {
-            PDFRenderer renderer = new PDFRenderer(document);
-            List<ProcessedFileResult> results = new ArrayList<>();
-            for (int pageIndex = 0; pageIndex < document.getNumberOfPages(); pageIndex++) {
-                String suffix = "-第" + (pageIndex + 1) + "页";
-                Path target = workspaceFile(taskId, baseName + suffix, "png");
-                BufferedImage image = renderer.renderImageWithDPI(pageIndex, 180, ImageType.RGB);
-                ImageIO.write(image, "png", target.toFile());
-                results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, 1, suffix));
-            }
-            return results;
-        } catch (IOException ex) {
-            throw new BizException("PDF 转 PNG 失败：" + ex.getMessage());
-        }
+    private List<List<ImageInput>> splitImagesByAiBoundary(List<ImageInput> images) {
+        // AI 边界识别服务接入前，保持每个压缩包至少产出一个完整 PDF，且不跨压缩包合并。
+        return List.of(images);
     }
 
     private void writeImagesToPdf(List<Path> images, Path target) {
@@ -246,42 +231,6 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         }
     }
 
-    private void writeImageAsPng(Path imagePath, Path target) {
-        try {
-            ImageIO.write(readImage(imagePath), "png", target.toFile());
-        } catch (IOException ex) {
-            throw new BizException("图片转 PNG 失败：" + ex.getMessage());
-        }
-    }
-
-    private void writeImagesToPng(List<Path> images, Path target) {
-        if (images.size() == 1) {
-            writeImageAsPng(images.get(0), target);
-            return;
-        }
-        try {
-            List<BufferedImage> bufferedImages = images.stream().map(this::readImage).toList();
-            int width = bufferedImages.stream().mapToInt(BufferedImage::getWidth).max().orElseThrow();
-            int height = bufferedImages.stream().mapToInt(BufferedImage::getHeight).sum();
-            BufferedImage combined = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-            Graphics2D graphics = combined.createGraphics();
-            try {
-                graphics.setColor(Color.WHITE);
-                graphics.fillRect(0, 0, width, height);
-                int y = 0;
-                for (BufferedImage image : bufferedImages) {
-                    graphics.drawImage(image, 0, y, null);
-                    y += image.getHeight();
-                }
-            } finally {
-                graphics.dispose();
-            }
-            ImageIO.write(combined, "png", target.toFile());
-        } catch (IOException ex) {
-            throw new BizException("图片合并为 PNG 失败：" + ex.getMessage());
-        }
-    }
-
     private BufferedImage readImage(Path imagePath) {
         try {
             BufferedImage image = ImageIO.read(imagePath.toFile());
@@ -294,19 +243,11 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         }
     }
 
-    private int countPdfPages(Path pdfPath) {
-        try (PDDocument document = PDDocument.load(pdfPath.toFile())) {
-            return document.getNumberOfPages();
-        } catch (IOException ex) {
-            throw new BizException("读取 PDF 页数失败：" + ex.getMessage());
-        }
-    }
-
     private void copy(Path source, Path target) {
         try {
             Files.copy(source, target, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException ex) {
-            throw new BizException("复制文件失败：" + ex.getMessage());
+            throw new BizException("复制图片失败：" + ex.getMessage());
         }
     }
 
@@ -314,15 +255,87 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         return fileStorageService.prepareWorkspaceFile(taskId, safeName(baseName) + "-" + UUID.randomUUID() + "." + ext);
     }
 
-    private ProcessedFileResult withSuffix(ProcessedFileResult result, String suffix) {
-        return new ProcessedFileResult(result.storagePath(), result.outputFormat(), result.pageCount(), suffix);
+    private PersonSplitStrategy splitStrategy(ArchiveTask task) {
+        return task.getPersonSplitStrategy() == null ? PersonSplitStrategy.SINGLE_PERSON : task.getPersonSplitStrategy();
+    }
+
+    private void clearDirectory(Path dir) throws IOException {
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (var paths = Files.walk(dir)) {
+            paths.sorted(Comparator.reverseOrder())
+                    .filter(path -> !path.equals(dir))
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ignored) {
+                        }
+                    });
+        }
+    }
+
+    private void deleteTempDir(Path tempDir) {
+        if (tempDir == null || !Files.exists(tempDir)) {
+            return;
+        }
+        try (var paths = Files.walk(tempDir)) {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException ignored) {
+                }
+            });
+        } catch (IOException ignored) {
+        }
+    }
+
+    private int naturalCompare(String left, String right) {
+        int leftIndex = 0;
+        int rightIndex = 0;
+        while (leftIndex < left.length() && rightIndex < right.length()) {
+            char leftChar = left.charAt(leftIndex);
+            char rightChar = right.charAt(rightIndex);
+            if (Character.isDigit(leftChar) && Character.isDigit(rightChar)) {
+                int leftEnd = numberEnd(left, leftIndex);
+                int rightEnd = numberEnd(right, rightIndex);
+                long leftNumber = Long.parseLong(left.substring(leftIndex, leftEnd));
+                long rightNumber = Long.parseLong(right.substring(rightIndex, rightEnd));
+                int numberCompare = Long.compare(leftNumber, rightNumber);
+                if (numberCompare != 0) {
+                    return numberCompare;
+                }
+                leftIndex = leftEnd;
+                rightIndex = rightEnd;
+                continue;
+            }
+            int charCompare = Character.compare(Character.toLowerCase(leftChar), Character.toLowerCase(rightChar));
+            if (charCompare != 0) {
+                return charCompare;
+            }
+            leftIndex++;
+            rightIndex++;
+        }
+        return Integer.compare(left.length(), right.length());
+    }
+
+    private int numberEnd(String value, int start) {
+        int index = start;
+        while (index < value.length() && Character.isDigit(value.charAt(index))) {
+            index++;
+        }
+        return index;
     }
 
     private boolean isImageExt(String ext) {
-        return switch (ext) {
+        return switch (ext.toLowerCase(Locale.ROOT)) {
             case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> true;
             default -> false;
         };
+    }
+
+    private String normalizeImageExt(String ext) {
+        return ext.toLowerCase(Locale.ROOT);
     }
 
     private String ext(String filename) {
@@ -334,16 +347,30 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
     }
 
     private String stripExt(String filename) {
+        if (filename == null) {
+            return "document";
+        }
         int dot = filename.lastIndexOf('.');
         return dot < 0 ? filename : filename.substring(0, dot);
     }
 
     private String filename(String path) {
-        return path.replace('\\', '/').substring(path.replace('\\', '/').lastIndexOf('/') + 1);
+        String normalized = path.replace('\\', '/');
+        return normalized.substring(normalized.lastIndexOf('/') + 1);
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return first == null || first.isBlank() ? second : first;
     }
 
     private String safeName(String name) {
         String safe = name == null || name.isBlank() ? "document" : name;
         return safe.replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+    }
+
+    private record ZipImageArchive(Path tempDir, List<ImageInput> images) {
+    }
+
+    private record ImageInput(Path path, String entryName, String baseName, String ext, int order) {
     }
 }

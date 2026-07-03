@@ -2,6 +2,7 @@ package com.danganguan.archive.task.service.impl;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadFileStatus;
 import com.danganguan.archive.file.mapper.UploadedFileMapper;
@@ -40,9 +41,14 @@ public class ArchiveTaskServiceImpl extends ServiceImpl<ArchiveTaskMapper, Archi
         task.setFileNameExample(request.fileNameExample());
         task.setAllowAiOverride(Boolean.TRUE.equals(request.allowAiOverride()));
         task.setEnableScanEnhance(Boolean.TRUE.equals(request.enableScanEnhance()));
-        task.setPersonSplitStrategy(request.personSplitStrategy() == null ? PersonSplitStrategy.SINGLE_PERSON : request.personSplitStrategy());
+        PersonSplitStrategy splitStrategy = request.personSplitStrategy() == null
+                ? PersonSplitStrategy.SINGLE_PERSON
+                : request.personSplitStrategy();
+        OutputFormat outputFormat = request.outputFormat() == null ? OutputFormat.PDF : request.outputFormat();
+        validateProcessingOptions(outputFormat, splitStrategy, request.fixedElementsPerPerson());
+        task.setPersonSplitStrategy(splitStrategy);
         task.setFixedElementsPerPerson(request.fixedElementsPerPerson());
-        task.setOutputFormat(request.outputFormat() == null ? OutputFormat.PDF : request.outputFormat());
+        task.setOutputFormat(outputFormat);
         task.setStatus(TaskStatus.DRAFT);
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
@@ -66,5 +72,15 @@ public class ArchiveTaskServiceImpl extends ServiceImpl<ArchiveTaskMapper, Archi
                 .set(WorkspaceDocument::getStatus, WorkspaceDocumentStatus.DELETED)
                 .set(WorkspaceDocument::getUpdatedAt, now)
                 .set(WorkspaceDocument::getDeleted, 1));
+    }
+
+    private void validateProcessingOptions(OutputFormat outputFormat, PersonSplitStrategy splitStrategy, Integer fixedElementsPerPerson) {
+        if (outputFormat == OutputFormat.PNG && !splitStrategy.isSinglePerson()) {
+            throw new BizException("输出为图片时仅支持单人单组策略");
+        }
+        if (outputFormat == OutputFormat.PDF && splitStrategy.isFixedElementsPerPerson()
+                && (fixedElementsPerPerson == null || fixedElementsPerPerson <= 0)) {
+            throw new BizException("输出为 PDF 且使用固定元素拆分时，每人元素数必须大于0");
+        }
     }
 }
