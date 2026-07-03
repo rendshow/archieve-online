@@ -21,10 +21,9 @@ def main():
     parser.add_argument("--input", required=True, help="Folder containing image zip archives.")
     parser.add_argument("--reference", required=True, help="Reference folder containing standard named PDFs.")
     parser.add_argument("--output", default="target/ocr-benchmark/1v1-report.csv", help="CSV report path.")
-    parser.add_argument("--engine", default="rapidocr", choices=["rapidocr", "pytesseract", "none"])
+    parser.add_argument("--engine", default="rapidocr", choices=["rapidocr", "none"])
     parser.add_argument("--pages", type=int, default=3, help="How many first images in each zip to OCR.")
     parser.add_argument("--limit", type=int, default=0, help="Limit zip count. 0 means all.")
-    parser.add_argument("--lang", default="chi_sim+eng", help="OCR language for pytesseract.")
     args = parser.parse_args()
 
     input_dir = Path(args.input)
@@ -33,7 +32,7 @@ def main():
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     convention = load_reference_convention(reference_dir)
-    ocr = build_ocr(args.engine, args.lang)
+    ocr = build_ocr(args.engine)
 
     zip_files = sorted(input_dir.glob("*.zip"), key=lambda path: natural_key(path.name))
     if args.limit > 0:
@@ -112,30 +111,13 @@ def extract_images(zip_path, work_dir):
     return image_paths
 
 
-def build_ocr(engine, lang):
+def build_ocr(engine):
     if engine == "none":
         return OcrEngine("none", False, "未指定 OCR 引擎", lambda path: "")
-    if engine == "pytesseract":
-        try:
-            from PIL import Image
-            import pytesseract
-        except Exception as exc:
-            return OcrEngine("pytesseract", False, str(exc), lambda path: "")
-        return OcrEngine(
-            "pytesseract",
-            True,
-            "",
-            lambda path: pytesseract.image_to_string(Image.open(path), lang=lang).strip(),
-        )
     try:
-        try:
-            from rapidocr import RapidOCR
-            engine_instance = RapidOCR()
-            return OcrEngine("rapidocr", True, "", lambda path: rapidocr_text(engine_instance, path))
-        except Exception:
-            from rapidocr_onnxruntime import RapidOCR
-            engine_instance = RapidOCR()
-            return OcrEngine("rapidocr_onnxruntime", True, "", lambda path: rapidocr_text(engine_instance, path))
+        from rapidocr import RapidOCR
+        engine_instance = RapidOCR()
+        return OcrEngine("rapidocr", True, "", lambda path: rapidocr_text(engine_instance, path))
     except Exception as exc:
         return OcrEngine("rapidocr", False, str(exc), lambda path: "")
 

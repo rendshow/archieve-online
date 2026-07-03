@@ -41,11 +41,7 @@ archive:
       timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}
   ocr:
     provider: ${ARCHIVE_OCR_PROVIDER:none}
-    languages: ${ARCHIVE_OCR_LANGUAGES:chi_sim+eng}
     timeout-seconds: ${ARCHIVE_OCR_TIMEOUT_SECONDS:30}
-    tesseract:
-      command: ${ARCHIVE_OCR_TESSERACT_COMMAND:tesseract}
-      psm: ${ARCHIVE_OCR_TESSERACT_PSM:6}
-    python:
-      command: ${ARCHIVE_OCR_PYTHON_COMMAND:python}
-      script: ${ARCHIVE_OCR_PYTHON_SCRIPT:scripts/ocr/pytesseract_ocr.py}
+    rapidocr:
+      command: ${ARCHIVE_OCR_RAPIDOCR_COMMAND:python}
+      script: ${ARCHIVE_OCR_RAPIDOCR_SCRIPT:scripts/ocr/rapidocr_ocr.py}

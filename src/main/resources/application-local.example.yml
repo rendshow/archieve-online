@@ -7,13 +7,9 @@ archive:
       model: your-model-or-endpoint
       timeout-seconds: 60
   ocr:
-    # 可选：none / tesseract / python
-    provider: none
-    languages: chi_sim+eng
-    timeout-seconds: 30
-    tesseract:
-      command: tesseract
-      psm: 6
-    python:
+    # 可选：none / rapidocr
+    provider: rapidocr
+    timeout-seconds: 60
+    rapidocr:
       command: python
-      script: scripts/ocr/pytesseract_ocr.py
+      script: scripts/ocr/rapidocr_ocr.py

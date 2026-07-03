@@ -14,26 +14,18 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Service
-@ConditionalOnProperty(prefix = "archive.ocr", name = "provider", havingValue = "tesseract")
 @RequiredArgsConstructor
-public class TesseractCliOcrServiceImpl implements OcrService {
+@ConditionalOnProperty(prefix = "archive.ocr", name = "provider", havingValue = "rapidocr")
+public class RapidOcrCliServiceImpl implements OcrService {
     private final OcrProperties properties;
 
     @Override
     public OcrResult recognize(Path imagePath) {
         List<String> command = List.of(
-                properties.getTesseract().getCommand(),
-                imagePath.toAbsolutePath().toString(),
-                "stdout",
-                "-l",
-                properties.getLanguages(),
-                "--psm",
-                String.valueOf(properties.getTesseract().getPsm())
+                properties.getRapidocr().getCommand(),
+                Path.of(properties.getRapidocr().getScript()).toAbsolutePath().toString(),
+                imagePath.toAbsolutePath().toString()
         );
-        return run(command, "tesseract");
-    }
-
-    private OcrResult run(List<String> command, String engine) {
         try {
             Process process = new ProcessBuilder(command)
                     .redirectErrorStream(true)
@@ -42,14 +34,14 @@ public class TesseractCliOcrServiceImpl implements OcrService {
             String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (!finished) {
                 process.destroyForcibly();
-                return new OcrResult("", BigDecimal.ZERO, engine, "OCR 超时");
+                return new OcrResult("", BigDecimal.ZERO, "rapidocr", "OCR 超时");
             }
             if (process.exitValue() != 0) {
-                return new OcrResult("", BigDecimal.ZERO, engine, output);
+                return new OcrResult("", BigDecimal.ZERO, "rapidocr", output);
             }
-            return new OcrResult(output, output.isBlank() ? BigDecimal.ZERO : new BigDecimal("0.60"), engine, "本地 OCR 完成");
+            return new OcrResult(output, output.isBlank() ? BigDecimal.ZERO : new BigDecimal("0.85"), "rapidocr", "RapidOCR 完成");
         } catch (Exception ex) {
-            return new OcrResult("", BigDecimal.ZERO, engine, ex.getMessage());
+            return new OcrResult("", BigDecimal.ZERO, "rapidocr", ex.getMessage());
         }
     }
 }
