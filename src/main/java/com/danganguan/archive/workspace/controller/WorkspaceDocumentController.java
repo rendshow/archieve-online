@@ -20,7 +20,7 @@ import java.util.List;
 public class WorkspaceDocumentController {
     private final WorkspaceDocumentService workspaceDocumentService;
 
-    @Operation(summary = "处理上传任务", description = "将任务下的原始文件处理为工作区档案，并触发 mock AI 命名和标签生成")
+    @Operation(summary = "处理上传任务", description = "将任务下的原始文件处理为工作区档案，并按任务配置触发文档分析、命名和标签生成")
     @PostMapping("/api/tasks/{taskId}/process")
     public Result<List<WorkspaceDocument>> process(@PathVariable Long taskId) {
         return Result.ok(workspaceDocumentService.processTask(taskId));

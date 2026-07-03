@@ -1,4 +1,4 @@
-package com.danganguan.archive.ai.mock;
+package com.danganguan.archive.ai.naming.impl;
 
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
 import com.danganguan.archive.ai.dto.AiNamingRequest;
@@ -13,8 +13,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class MockAiNamingServiceTest {
-    private final MockAiNamingService namingService = new MockAiNamingService();
+class RuleBasedAiNamingServiceTest {
+    private final RuleBasedAiNamingService namingService = new RuleBasedAiNamingService();
 
     @Test
     void shouldFollowNumberNameExampleWhenPersonNameDetected() {

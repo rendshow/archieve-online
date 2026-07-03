@@ -1,4 +1,4 @@
-package com.danganguan.archive.ai.mock;
+package com.danganguan.archive.ai.tagging.impl;
 
 import com.danganguan.archive.ai.dto.AiTaggingRequest;
 import com.danganguan.archive.ai.dto.AiTaggingResult;
@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
-public class MockAiTaggingService implements AiTaggingService {
+public class RuleBasedAiTaggingService implements AiTaggingService {
 
     @Override
     public AiTaggingResult tag(AiTaggingRequest request) {

@@ -1,4 +1,4 @@
-package com.danganguan.archive.ai.mock;
+package com.danganguan.archive.ai.naming.impl;
 
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
 import com.danganguan.archive.ai.dto.AiNamingRequest;
@@ -14,7 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
-public class MockAiNamingService implements AiNamingService {
+public class RuleBasedAiNamingService implements AiNamingService {
     private static final Pattern NUMBER_NAME_TAIL = Pattern.compile("^(.*?)(\\d+)([\\u4e00-\\u9fa5]{2,4})$");
     private static final Pattern CHINESE_NAME_TAIL = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})$");
 
@@ -28,8 +28,8 @@ public class MockAiNamingService implements AiNamingService {
                 ? "未分类档案"
                 : task.getFolderNameExample();
         String reason = analyzeResult == null
-                ? "MVP mock：参考任务命名示例和原始文件名生成，后续替换为 OCR/视觉模型。"
-                : "MVP mock：参考任务命名示例、原始文件名和本地文档分析结果生成。分析依据：" + analyzeResult.reason();
+                ? "规则命名：参考任务命名示例和原始文件名生成。"
+                : "规则命名：参考任务命名示例、原始文件名和本地文档分析结果生成。分析依据：" + analyzeResult.reason();
         String summary = analyzeResult == null || analyzeResult.summary() == null || analyzeResult.summary().isBlank()
                 ? "由原始文件 " + file.getOriginalName() + " 生成的工作区档案。"
                 : analyzeResult.summary();
