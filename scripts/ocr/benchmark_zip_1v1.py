@@ -9,7 +9,10 @@ from pathlib import Path
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
-PERSON_PATTERN = re.compile(r"(?:作者姓名|学生姓名|姓名|申请人)[:：\s]*([\u4e00-\u9fa5]{2,4})")
+PERSON_PATTERN = re.compile(
+    r"(?:作者姓名|学生姓名|姓名|申请人)[:：\s]*"
+    r"([\u4e00-\u9fa5]{2,4}?)(?=专业|课程|学号|指导教师|导师|职称|所在单位|论文题目|$)"
+)
 REFERENCE_PATTERN = re.compile(r"^(.*?)(\d+)([\u4e00-\u9fa5]{2,4})$")
 
 
@@ -138,7 +141,11 @@ def build_ocr(engine, lang):
 
 
 def rapidocr_text(engine, image_path):
-    result, _ = engine(str(image_path))
+    result = engine(str(image_path))
+    if hasattr(result, "txts"):
+        return "\n".join(text for text in result.txts if text).strip()
+    if isinstance(result, tuple) and result:
+        result = result[0]
     if not result:
         return ""
     return "\n".join(item[1] for item in result if len(item) > 1 and item[1]).strip()
