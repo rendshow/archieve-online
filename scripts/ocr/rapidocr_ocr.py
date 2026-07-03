@@ -1,4 +1,5 @@
 import sys
+import logging
 
 
 def main():
@@ -14,6 +15,7 @@ def main():
         return 3
 
     try:
+        logging.getLogger("RapidOCR").setLevel(logging.ERROR)
         ocr = RapidOCR()
         result = ocr(image_path)
     except Exception as exc:

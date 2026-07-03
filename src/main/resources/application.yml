@@ -40,7 +40,7 @@ archive:
       model: ${ARCHIVE_AI_MODEL:}
       timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}
   ocr:
-    provider: ${ARCHIVE_OCR_PROVIDER:none}
+    provider: ${ARCHIVE_OCR_PROVIDER:rapidocr}
     timeout-seconds: ${ARCHIVE_OCR_TIMEOUT_SECONDS:30}
     rapidocr:
       command: ${ARCHIVE_OCR_RAPIDOCR_COMMAND:python}

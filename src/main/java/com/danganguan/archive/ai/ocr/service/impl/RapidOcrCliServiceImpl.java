@@ -27,21 +27,24 @@ public class RapidOcrCliServiceImpl implements OcrService {
                 imagePath.toAbsolutePath().toString()
         );
         try {
-            Process process = new ProcessBuilder(command)
-                    .redirectErrorStream(true)
-                    .start();
+            Process process = new ProcessBuilder(command).start();
             boolean finished = process.waitFor(properties.getTimeoutSeconds(), TimeUnit.SECONDS);
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (!finished) {
                 process.destroyForcibly();
                 return new OcrResult("", BigDecimal.ZERO, "rapidocr", "OCR 超时");
             }
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            String error = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8).trim();
             if (process.exitValue() != 0) {
-                return new OcrResult("", BigDecimal.ZERO, "rapidocr", output);
+                return new OcrResult("", BigDecimal.ZERO, "rapidocr", firstNonBlank(error, output));
             }
             return new OcrResult(output, output.isBlank() ? BigDecimal.ZERO : new BigDecimal("0.85"), "rapidocr", "RapidOCR 完成");
         } catch (Exception ex) {
             return new OcrResult("", BigDecimal.ZERO, "rapidocr", ex.getMessage());
         }
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return first == null || first.isBlank() ? second : first;
     }
 }
