@@ -8,16 +8,14 @@ import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "正式档案", description = "正式档案入库、查询、修改和删除接口")
 @RestController
+@RequiredArgsConstructor
 public class ArchiveDocumentController {
     private final ArchiveDocumentService archiveDocumentService;
-
-    public ArchiveDocumentController(ArchiveDocumentService archiveDocumentService) {
-        this.archiveDocumentService = archiveDocumentService;
-    }
 
     @Operation(summary = "确认工作区档案入库", description = "将工作区档案确认为正式档案，并复制标签、更新任务状态")
     @PostMapping("/api/workspace-documents/{id}/approve")

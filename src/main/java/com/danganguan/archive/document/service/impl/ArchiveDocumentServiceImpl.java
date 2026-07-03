@@ -20,6 +20,7 @@ import com.danganguan.archive.task.service.ArchiveTaskService;
 import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.enums.WorkspaceDocumentStatus;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,19 +30,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMapper, ArchiveDocument>
         implements ArchiveDocumentService {
     private final WorkspaceDocumentService workspaceDocumentService;
     private final ArchiveTaskService archiveTaskService;
     private final DocumentTagService documentTagService;
-
-    public ArchiveDocumentServiceImpl(WorkspaceDocumentService workspaceDocumentService,
-                                      ArchiveTaskService archiveTaskService,
-                                      DocumentTagService documentTagService) {
-        this.workspaceDocumentService = workspaceDocumentService;
-        this.archiveTaskService = archiveTaskService;
-        this.documentTagService = documentTagService;
-    }
 
     @Override
     @Transactional

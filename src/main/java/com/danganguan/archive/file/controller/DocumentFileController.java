@@ -9,6 +9,7 @@ import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.PathResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -27,18 +28,11 @@ import java.nio.file.Path;
 
 @Tag(name = "档案文件", description = "处理后文件预览和下载接口")
 @RestController
+@RequiredArgsConstructor
 public class DocumentFileController {
     private final WorkspaceDocumentService workspaceDocumentService;
     private final ArchiveDocumentService archiveDocumentService;
     private final FileStorageService fileStorageService;
-
-    public DocumentFileController(WorkspaceDocumentService workspaceDocumentService,
-                                  ArchiveDocumentService archiveDocumentService,
-                                  FileStorageService fileStorageService) {
-        this.workspaceDocumentService = workspaceDocumentService;
-        this.archiveDocumentService = archiveDocumentService;
-        this.fileStorageService = fileStorageService;
-    }
 
     @Operation(summary = "预览工作区处理后文件", description = "根据工作区档案 ID 预览或下载处理后的 PDF/PNG 文件")
     @GetMapping("/api/workspace-documents/{id}/file")

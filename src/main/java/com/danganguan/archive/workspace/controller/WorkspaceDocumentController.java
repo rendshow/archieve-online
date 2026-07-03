@@ -9,18 +9,16 @@ import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @Tag(name = "工作区档案", description = "工作区处理、审核前档案接口")
 @RestController
+@RequiredArgsConstructor
 public class WorkspaceDocumentController {
     private final WorkspaceDocumentService workspaceDocumentService;
-
-    public WorkspaceDocumentController(WorkspaceDocumentService workspaceDocumentService) {
-        this.workspaceDocumentService = workspaceDocumentService;
-    }
 
     @Operation(summary = "处理上传任务", description = "将任务下的原始文件处理为工作区档案，并触发 mock AI 命名和标签生成")
     @PostMapping("/api/tasks/{taskId}/process")

@@ -31,6 +31,7 @@ import com.danganguan.archive.workspace.enums.WorkspaceDocumentStatus;
 import com.danganguan.archive.workspace.mapper.WorkspaceDocumentMapper;
 import com.danganguan.archive.workspace.service.NamingLogService;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,6 +42,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@RequiredArgsConstructor
 public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentMapper, WorkspaceDocument>
         implements WorkspaceDocumentService {
     private final ArchiveTaskService archiveTaskService;
@@ -51,24 +53,6 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private final NamingLogService namingLogService;
     private final DocumentProcessingService documentProcessingService;
     private final DocumentAnalyzeService documentAnalyzeService;
-
-    public WorkspaceDocumentServiceImpl(ArchiveTaskService archiveTaskService,
-                                        UploadedFileService uploadedFileService,
-                                        AiNamingService aiNamingService,
-                                        AiTaggingService aiTaggingService,
-                                        DocumentTagService documentTagService,
-                                        NamingLogService namingLogService,
-                                        DocumentProcessingService documentProcessingService,
-                                        DocumentAnalyzeService documentAnalyzeService) {
-        this.archiveTaskService = archiveTaskService;
-        this.uploadedFileService = uploadedFileService;
-        this.aiNamingService = aiNamingService;
-        this.aiTaggingService = aiTaggingService;
-        this.documentTagService = documentTagService;
-        this.namingLogService = namingLogService;
-        this.documentProcessingService = documentProcessingService;
-        this.documentAnalyzeService = documentAnalyzeService;
-    }
 
     @Override
     @Transactional

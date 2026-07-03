@@ -8,17 +8,15 @@ import com.danganguan.archive.task.entity.ArchiveTask;
 import com.danganguan.archive.task.service.ArchiveTaskService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 @Tag(name = "上传任务", description = "档案上传处理任务接口")
 @RestController
 @RequestMapping("/api/tasks")
+@RequiredArgsConstructor
 public class ArchiveTaskController {
     private final ArchiveTaskService archiveTaskService;
-
-    public ArchiveTaskController(ArchiveTaskService archiveTaskService) {
-        this.archiveTaskService = archiveTaskService;
-    }
 
     @Operation(summary = "创建上传任务", description = "创建一次档案上传处理任务，并记录命名参考、转换策略和输出格式")
     @PostMapping

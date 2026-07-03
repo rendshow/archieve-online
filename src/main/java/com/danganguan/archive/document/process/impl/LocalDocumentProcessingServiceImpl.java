@@ -9,6 +9,7 @@ import com.danganguan.archive.file.storage.FileStorageService;
 import com.danganguan.archive.task.entity.ArchiveTask;
 import com.danganguan.archive.task.enums.OutputFormat;
 import com.danganguan.archive.task.enums.PersonSplitStrategy;
+import lombok.RequiredArgsConstructor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -37,14 +38,11 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 @Service
+@RequiredArgsConstructor
 public class LocalDocumentProcessingServiceImpl implements DocumentProcessingService {
     private static final float PDF_MARGIN = 24F;
 
     private final FileStorageService fileStorageService;
-
-    public LocalDocumentProcessingServiceImpl(FileStorageService fileStorageService) {
-        this.fileStorageService = fileStorageService;
-    }
 
     @Override
     public List<ProcessedFileResult> process(ArchiveTask task, UploadedFile file) {

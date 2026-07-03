@@ -8,6 +8,7 @@ import com.danganguan.archive.tag.enums.TagSource;
 import com.danganguan.archive.tag.mapper.DocumentTagMapper;
 import com.danganguan.archive.tag.service.DocumentTagService;
 import com.danganguan.archive.tag.service.TagService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -16,12 +17,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class DocumentTagServiceImpl extends ServiceImpl<DocumentTagMapper, DocumentTag> implements DocumentTagService {
     private final TagService tagService;
-
-    public DocumentTagServiceImpl(TagService tagService) {
-        this.tagService = tagService;
-    }
 
     @Override
     public void replaceTags(DocumentType documentType, Long documentId, List<String> names, TagSource source) {

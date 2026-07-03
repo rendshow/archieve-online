@@ -3,6 +3,7 @@ package com.danganguan.archive.ai.ocr.service.impl;
 import com.danganguan.archive.ai.ocr.dto.OcrResult;
 import com.danganguan.archive.ai.ocr.service.OcrService;
 import com.danganguan.archive.common.config.OcrProperties;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -14,12 +15,9 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 @ConditionalOnProperty(prefix = "archive.ocr", name = "provider", havingValue = "python")
+@RequiredArgsConstructor
 public class PythonCliOcrServiceImpl implements OcrService {
     private final OcrProperties properties;
-
-    public PythonCliOcrServiceImpl(OcrProperties properties) {
-        this.properties = properties;
-    }
 
     @Override
     public OcrResult recognize(Path imagePath) {

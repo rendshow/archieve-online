@@ -13,6 +13,7 @@ import com.danganguan.archive.file.storage.FileStorageService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
@@ -48,6 +49,7 @@ import java.util.zip.ZipInputStream;
 
 @Service
 @ConditionalOnProperty(prefix = "archive.ai", name = "provider", havingValue = "openai-compatible")
+@RequiredArgsConstructor
 public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
     private static final int TEXT_LIMIT = 8000;
     private static final int PDF_VISUAL_PAGE_LIMIT = 3;
@@ -60,18 +62,6 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
     private final OcrService ocrService;
     private final ObjectMapper objectMapper;
     private final RestClient.Builder restClientBuilder;
-
-    public OpenAiCompatibleDocumentAnalyzeServiceImpl(AiProviderProperties properties,
-                                                      FileStorageService fileStorageService,
-                                                      OcrService ocrService,
-                                                      ObjectMapper objectMapper,
-                                                      RestClient.Builder restClientBuilder) {
-        this.properties = properties;
-        this.fileStorageService = fileStorageService;
-        this.ocrService = ocrService;
-        this.objectMapper = objectMapper;
-        this.restClientBuilder = restClientBuilder;
-    }
 
     @Override
     public DocumentAnalyzeResult analyze(DocumentAnalyzeRequest request) {

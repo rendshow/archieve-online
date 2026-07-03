@@ -15,6 +15,7 @@ import com.danganguan.archive.task.service.ArchiveTaskService;
 import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.enums.WorkspaceDocumentStatus;
 import com.danganguan.archive.workspace.mapper.WorkspaceDocumentMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,14 +23,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
 @Service
+@RequiredArgsConstructor
 public class ArchiveTaskServiceImpl extends ServiceImpl<ArchiveTaskMapper, ArchiveTask> implements ArchiveTaskService {
     private final UploadedFileMapper uploadedFileMapper;
     private final WorkspaceDocumentMapper workspaceDocumentMapper;
-
-    public ArchiveTaskServiceImpl(UploadedFileMapper uploadedFileMapper, WorkspaceDocumentMapper workspaceDocumentMapper) {
-        this.uploadedFileMapper = uploadedFileMapper;
-        this.workspaceDocumentMapper = workspaceDocumentMapper;
-    }
 
     @Override
     public ArchiveTask create(CreateTaskRequest request) {

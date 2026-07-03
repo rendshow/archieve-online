@@ -9,6 +9,7 @@ import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.file.storage.FileStorageService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
@@ -38,6 +39,7 @@ import java.util.zip.ZipInputStream;
 
 @Service
 @ConditionalOnProperty(prefix = "archive.ai", name = "provider", havingValue = "local", matchIfMissing = true)
+@RequiredArgsConstructor
 public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
     private static final Pattern PERSON_PATTERN = Pattern.compile("(?:姓名|学生姓名|申请人|负责人)[:：\\s]*([\\u4e00-\\u9fa5]{2,4})");
     private static final int TEXT_LIMIT = 8000;
@@ -45,11 +47,6 @@ public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
 
     private final FileStorageService fileStorageService;
     private final OcrService ocrService;
-
-    public LocalDocumentAnalyzeServiceImpl(FileStorageService fileStorageService, OcrService ocrService) {
-        this.fileStorageService = fileStorageService;
-        this.ocrService = ocrService;
-    }
 
     @Override
     public DocumentAnalyzeResult analyze(DocumentAnalyzeRequest request) {

@@ -5,6 +5,7 @@ import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.service.UploadedFileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -12,12 +13,9 @@ import java.util.List;
 
 @Tag(name = "原始文件", description = "任务原始上传文件接口")
 @RestController
+@RequiredArgsConstructor
 public class UploadedFileController {
     private final UploadedFileService uploadedFileService;
-
-    public UploadedFileController(UploadedFileService uploadedFileService) {
-        this.uploadedFileService = uploadedFileService;
-    }
 
     @Operation(summary = "上传原始文件", description = "向指定任务上传 PDF、图片或 ZIP 文件，字段名为 files")
     @PostMapping("/api/tasks/{taskId}/files")

@@ -13,6 +13,7 @@ import com.danganguan.archive.file.storage.StoredFile;
 import com.danganguan.archive.task.entity.ArchiveTask;
 import com.danganguan.archive.task.enums.TaskStatus;
 import com.danganguan.archive.task.service.ArchiveTaskService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,14 +24,10 @@ import java.util.Locale;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, UploadedFile> implements UploadedFileService {
     private final ArchiveTaskService archiveTaskService;
     private final FileStorageService fileStorageService;
-
-    public UploadedFileServiceImpl(ArchiveTaskService archiveTaskService, FileStorageService fileStorageService) {
-        this.archiveTaskService = archiveTaskService;
-        this.fileStorageService = fileStorageService;
-    }
 
     @Override
     public List<UploadedFile> upload(Long taskId, List<MultipartFile> files) {
