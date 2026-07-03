@@ -29,6 +29,7 @@ import com.danganguan.archive.workspace.entity.NamingLog;
 import com.danganguan.archive.workspace.entity.WorkspaceDocument;
 import com.danganguan.archive.workspace.enums.WorkspaceDocumentStatus;
 import com.danganguan.archive.workspace.mapper.WorkspaceDocumentMapper;
+import com.danganguan.archive.workspace.naming.DefaultWorkspaceNamingService;
 import com.danganguan.archive.workspace.service.NamingLogService;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +54,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private final NamingLogService namingLogService;
     private final DocumentProcessingService documentProcessingService;
     private final DocumentAnalyzeService documentAnalyzeService;
+    private final DefaultWorkspaceNamingService defaultWorkspaceNamingService;
 
     @Override
     @Transactional
@@ -61,7 +63,9 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         if (task == null) {
             throw new BizException("上传任务不存在");
         }
-        validateNamingReference(task);
+        if (aiNamingEnabled(task)) {
+            validateNamingReference(task);
+        }
         List<UploadedFile> files = uploadedFileService.listByTask(taskId);
         if (files.isEmpty()) {
             throw new BizException("任务下没有可处理的上传文件");
@@ -171,7 +175,9 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         List<ProcessedFileResult> processedFiles = documentProcessingService.processGroup(task, groupFiles);
         List<WorkspaceDocument> documents = new ArrayList<>();
         for (ProcessedFileResult processedFile : processedFiles) {
-            DocumentAnalyzeResult analyzeResult = documentAnalyzeService.analyze(new DocumentAnalyzeRequest(task, groupFiles, processedFile));
+            DocumentAnalyzeResult analyzeResult = aiNamingEnabled(task)
+                    ? documentAnalyzeService.analyze(new DocumentAnalyzeRequest(task, groupFiles, processedFile))
+                    : null;
             documents.add(createWorkspaceDocument(task, firstFile, processedFile, analyzeResult));
         }
         return documents;
@@ -179,7 +185,11 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
 
     private WorkspaceDocument createWorkspaceDocument(ArchiveTask task, UploadedFile file, ProcessedFileResult processedFile,
                                                      DocumentAnalyzeResult analyzeResult) {
-        AiNamingResult naming = aiNamingService.name(new AiNamingRequest(task, file, analyzeResult, nextNamingSequence(task.getId())));
+        boolean aiNamingEnabled = aiNamingEnabled(task);
+        int sequenceNo = nextNamingSequence(task.getId());
+        AiNamingResult naming = aiNamingEnabled
+                ? aiNamingService.name(new AiNamingRequest(task, file, analyzeResult, sequenceNo))
+                : defaultWorkspaceNamingService.name(task, file, sequenceNo);
         LocalDateTime now = LocalDateTime.now();
         String suggestedName = appendSuffix(naming.suggestedName(), processedFile.nameSuffix());
 
@@ -194,7 +204,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         document.setStoragePath(processedFile.storagePath());
         document.setPageCount(processedFile.pageCount());
         document.setAiSummary(naming.summary());
-        document.setOcrText(analyzeResult.extractedText());
+        document.setOcrText(analyzeResult == null ? null : analyzeResult.extractedText());
         document.setNamingReason(naming.reason());
         document.setStatus(WorkspaceDocumentStatus.PENDING_REVIEW);
         document.setCreatedAt(now);
@@ -202,8 +212,10 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         document.setDeleted(0);
         save(document);
 
-        List<String> tags = aiTaggingService.tag(new AiTaggingRequest(task, file, suggestedName, analyzeResult)).tags();
-        documentTagService.replaceTags(DocumentType.WORKSPACE, document.getId(), tags, TagSource.AI);
+        if (aiNamingEnabled) {
+            List<String> tags = aiTaggingService.tag(new AiTaggingRequest(task, file, suggestedName, analyzeResult)).tags();
+            documentTagService.replaceTags(DocumentType.WORKSPACE, document.getId(), tags, TagSource.AI);
+        }
         saveNamingLog(task, file, document, naming, suggestedName);
         return document;
     }
@@ -232,6 +244,10 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
             return name;
         }
         return name + suffix;
+    }
+
+    private boolean aiNamingEnabled(ArchiveTask task) {
+        return Boolean.TRUE.equals(task.getAllowAiOverride());
     }
 
     private void validateNamingReference(ArchiveTask task) {
