@@ -16,11 +16,13 @@ public class ImageEnhanceProperties {
     @Getter
     @Setter
     public static class QuarkApi {
-        private String endpoint = "";
-        private String apiKey = "";
-        private String apiKeyHeader = "Authorization";
-        private String apiKeyPrefix = "Bearer ";
-        private String scene = "scan";
+        private String endpoint = "https://scan-business.quark.cn/vision";
+        private String clientId = "";
+        private String clientSecret = "";
+        private String functionOption = "auto_select";
+        private String autoCrop = "true";
+        private String autoRotate = "true";
+        private boolean needReturnImage = true;
         private int timeoutSeconds = 60;
     }
 }

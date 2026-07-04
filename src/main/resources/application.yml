@@ -37,11 +37,13 @@ archive:
   image-enhance:
     provider: ${ARCHIVE_IMAGE_ENHANCE_PROVIDER:noop}
     quark-api:
-      endpoint: ${ARCHIVE_QUARK_IMAGE_ENHANCE_ENDPOINT:}
-      api-key: ${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY:}
-      api-key-header: ${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY_HEADER:Authorization}
-      api-key-prefix: ${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY_PREFIX:Bearer }
-      scene: ${ARCHIVE_QUARK_IMAGE_ENHANCE_SCENE:scan}
+      endpoint: ${ARCHIVE_QUARK_IMAGE_ENHANCE_ENDPOINT:https://scan-business.quark.cn/vision}
+      client-id: ${ARCHIVE_QUARK_IMAGE_ENHANCE_CLIENT_ID:${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY_ID:}}
+      client-secret: ${ARCHIVE_QUARK_IMAGE_ENHANCE_CLIENT_SECRET:${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY:}}
+      function-option: ${ARCHIVE_QUARK_IMAGE_ENHANCE_FUNCTION_OPTION:auto_select}
+      auto-crop: ${ARCHIVE_QUARK_IMAGE_ENHANCE_AUTO_CROP:true}
+      auto-rotate: ${ARCHIVE_QUARK_IMAGE_ENHANCE_AUTO_ROTATE:true}
+      need-return-image: ${ARCHIVE_QUARK_IMAGE_ENHANCE_NEED_RETURN_IMAGE:true}
       timeout-seconds: ${ARCHIVE_QUARK_IMAGE_ENHANCE_TIMEOUT_SECONDS:60}
   ai:
     provider: ${ARCHIVE_AI_PROVIDER:local}
