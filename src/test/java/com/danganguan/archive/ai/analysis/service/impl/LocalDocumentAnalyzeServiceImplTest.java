@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,7 @@ import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class LocalDocumentAnalyzeServiceImplTest {
@@ -55,6 +57,20 @@ class LocalDocumentAnalyzeServiceImplTest {
 
         assertNotNull(result);
     }
+
+    @Test
+    void shouldDetectPersonNameFromRawOcrVariants() throws Exception {
+        LocalDocumentAnalyzeServiceImpl service = new LocalDocumentAnalyzeServiceImpl(
+                new TestFileStorageService(tempDir),
+                new NoopOcrServiceImpl()
+        );
+        Method detectPersonName = LocalDocumentAnalyzeServiceImpl.class.getDeclaredMethod("detectPersonName", String.class);
+        detectPersonName.setAccessible(true);
+
+        assertEquals("彭国斌", detectPersonName.invoke(service, "姓名彭国斌性期男出生年月"));
+        assertEquals("王海义", detectPersonName.invoke(service, "94052006-1王海义jpg 中国人民解放军农牧大学"));
+    }
+
 
     private record TestFileStorageService(Path root) implements FileStorageService {
         @Override

@@ -42,8 +42,11 @@ import java.util.zip.ZipInputStream;
 @RequiredArgsConstructor
 public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
     private static final Pattern PERSON_PATTERN = Pattern.compile(
-            "(?:作者姓名|学生姓名|姓名|申请人|负责人)[:：\\s]*"
-                    + "([\\u4e00-\\u9fa5]{2,4}?)(?=专业|课程|学号|指导教师|导师|职称|所在单位|论文题目|硕士|博士|本科|申请材料|[，,。；;、]|$)"
+            "(?:作者姓名|学生姓名|姓名|申请人|负责人|处名|如名|炸名)[:：\\s]*"
+                    + "([\\u4e00-\\u9fa5]{2,4}?)(?=性别|性期|出生|专业|课程|学号|指导教师|导师|职称|所在单位|论文题目|硕士|博士|本科|申请材料|男|女|[，,。；;、]|$)"
+    );
+    private static final Pattern IMAGE_FILENAME_PERSON_PATTERN = Pattern.compile(
+            "\\d{6,}[-_－]\\d+([\\u4e00-\\u9fa5]{2,4})(?:jpe?g|png|heic|heif)?"
     );
     private static final int TEXT_LIMIT = 8000;
     private static final int PDF_OCR_PAGE_LIMIT = 3;
@@ -181,9 +184,11 @@ public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
             return null;
         }
         String compactText = text.replaceAll("\\s+", "");
-        Matcher matcher = PERSON_PATTERN.matcher(compactText);
-        if (matcher.find()) {
-            return matcher.group(1);
+        for (Pattern pattern : List.of(PERSON_PATTERN, IMAGE_FILENAME_PERSON_PATTERN)) {
+            Matcher matcher = pattern.matcher(compactText);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
         }
         return null;
     }

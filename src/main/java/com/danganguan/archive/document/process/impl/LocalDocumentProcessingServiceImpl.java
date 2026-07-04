@@ -33,6 +33,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -40,6 +41,7 @@ import java.util.zip.ZipInputStream;
 @RequiredArgsConstructor
 public class LocalDocumentProcessingServiceImpl implements DocumentProcessingService {
     private static final float PDF_MARGIN = 24F;
+    private static final long HEIC_CONVERT_TIMEOUT_SECONDS = 60L;
 
     private final FileStorageService fileStorageService;
     private final ImageEnhanceService imageEnhanceService;
@@ -164,8 +166,10 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         for (int i = 0; i < images.size(); i++) {
             ImageInput image = images.get(i);
             String suffix = images.size() == 1 ? "" : "-第" + (i + 1) + "张";
-            Path target = workspaceFile(task.getId(), firstNonBlank(image.baseName(), baseName) + suffix, image.ext());
-            copy(image.path(), target);
+            boolean heic = isHeicExt(image.ext());
+            Path readableImage = normalizeReadableImage(image);
+            Path target = workspaceFile(task.getId(), firstNonBlank(image.baseName(), baseName) + suffix, heic ? "png" : image.ext());
+            copy(readableImage, target);
             results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, 1, ""));
         }
         return results;
@@ -215,7 +219,7 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
     private void writeImagesToPdf(List<Path> images, Path target) {
         try (PDDocument document = new PDDocument()) {
             for (Path imagePath : images) {
-                BufferedImage image = readImage(imagePath);
+                BufferedImage image = readImage(normalizeReadableImage(imagePath));
                 float width = image.getWidth();
                 float height = image.getHeight();
                 PDPage page = new PDPage(new PDRectangle(width + PDF_MARGIN * 2, height + PDF_MARGIN * 2));
@@ -240,6 +244,48 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             return image;
         } catch (IOException ex) {
             throw new BizException("读取图片失败：" + ex.getMessage());
+        }
+    }
+
+    private Path normalizeReadableImage(ImageInput image) {
+        return isHeicExt(image.ext()) ? convertHeicToPng(image.path()) : image.path();
+    }
+
+    private Path normalizeReadableImage(Path imagePath) {
+        return isHeicExt(ext(imagePath.getFileName().toString())) ? convertHeicToPng(imagePath) : imagePath;
+    }
+
+    private Path convertHeicToPng(Path source) {
+        Path target = source.resolveSibling(stripExt(source.getFileName().toString()) + ".png");
+        if (Files.exists(target)) {
+            return target;
+        }
+        List<String> command = List.of(
+                "python",
+                Path.of("scripts/image/convert_heic.py").toAbsolutePath().toString(),
+                source.toAbsolutePath().toString(),
+                target.toAbsolutePath().toString()
+        );
+        try {
+            ProcessBuilder processBuilder = new ProcessBuilder(command);
+            processBuilder.environment().put("PYTHONIOENCODING", "utf-8");
+            Process process = processBuilder.start();
+            boolean finished = process.waitFor(HEIC_CONVERT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                throw new BizException("HEIC 转 PNG 超时：" + source.getFileName());
+            }
+            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            String error = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+            if (process.exitValue() != 0) {
+                throw new BizException("HEIC 转 PNG 失败：" + firstNonBlank(error, output));
+            }
+            return target;
+        } catch (IOException ex) {
+            throw new BizException("HEIC 转 PNG 失败：" + ex.getMessage());
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BizException("HEIC 转 PNG 被中断");
         }
     }
 
@@ -329,7 +375,14 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
 
     private boolean isImageExt(String ext) {
         return switch (ext.toLowerCase(Locale.ROOT)) {
-            case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff" -> true;
+            case "jpg", "jpeg", "png", "webp", "bmp", "tif", "tiff", "heic", "heif" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isHeicExt(String ext) {
+        return switch (ext.toLowerCase(Locale.ROOT)) {
+            case "heic", "heif" -> true;
             default -> false;
         };
     }
