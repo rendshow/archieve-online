@@ -1,6 +1,10 @@
 import sys
 from pathlib import Path
 
+MAX_EDGE = 2200
+MAX_BYTES = 4_800_000
+MIN_QUALITY = 60
+
 
 def main():
     if hasattr(sys.stdout, "reconfigure"):
@@ -9,7 +13,7 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8")
 
     if len(sys.argv) < 3:
-        print("usage: convert_heic.py <source.heic> <target.png>", file=sys.stderr)
+        print("usage: convert_heic.py <source.heic> <target.jpg>", file=sys.stderr)
         return 2
 
     source = Path(sys.argv[1])
@@ -25,10 +29,15 @@ def main():
         pillow_heif.register_heif_opener()
         with Image.open(source) as image:
             image = ImageOps.exif_transpose(image)
-            if image.mode not in ("RGB", "RGBA"):
-                image = image.convert("RGB")
+            image = image.convert("RGB")
+            image.thumbnail((MAX_EDGE, MAX_EDGE), Image.Resampling.LANCZOS)
             target.parent.mkdir(parents=True, exist_ok=True)
-            image.save(target, format="PNG")
+            quality = 85
+            while True:
+                image.save(target, format="JPEG", quality=quality, optimize=True)
+                if target.stat().st_size <= MAX_BYTES or quality <= MIN_QUALITY:
+                    break
+                quality -= 5
     except Exception as exc:
         print(f"convert HEIC failed: {exc}", file=sys.stderr)
         return 4

@@ -68,6 +68,7 @@ class LocalDocumentAnalyzeServiceImplTest {
         detectPersonName.setAccessible(true);
 
         assertEquals("彭国斌", detectPersonName.invoke(service, "姓名彭国斌性期男出生年月"));
+        assertEquals("李华", detectPersonName.invoke(service, "姓名 李华 工作单位 中国医科大学"));
         assertEquals("王海义", detectPersonName.invoke(service, "94052006-1王海义jpg 中国人民解放军农牧大学"));
     }
 

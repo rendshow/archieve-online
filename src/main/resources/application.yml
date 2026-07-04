@@ -34,6 +34,15 @@ mybatis-plus:
 
 archive:
   storage-root: storage
+  image-enhance:
+    provider: ${ARCHIVE_IMAGE_ENHANCE_PROVIDER:noop}
+    quark-api:
+      endpoint: ${ARCHIVE_QUARK_IMAGE_ENHANCE_ENDPOINT:}
+      api-key: ${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY:}
+      api-key-header: ${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY_HEADER:Authorization}
+      api-key-prefix: ${ARCHIVE_QUARK_IMAGE_ENHANCE_API_KEY_PREFIX:Bearer }
+      scene: ${ARCHIVE_QUARK_IMAGE_ENHANCE_SCENE:scan}
+      timeout-seconds: ${ARCHIVE_QUARK_IMAGE_ENHANCE_TIMEOUT_SECONDS:60}
   ai:
     provider: ${ARCHIVE_AI_PROVIDER:local}
     openai-compatible:

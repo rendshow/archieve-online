@@ -43,7 +43,7 @@ import java.util.zip.ZipInputStream;
 public class LocalDocumentAnalyzeServiceImpl implements DocumentAnalyzeService {
     private static final Pattern PERSON_PATTERN = Pattern.compile(
             "(?:作者姓名|学生姓名|姓名|申请人|负责人|处名|如名|炸名)[:：\\s]*"
-                    + "([\\u4e00-\\u9fa5]{2,4}?)(?=性别|性期|出生|专业|课程|学号|指导教师|导师|职称|所在单位|论文题目|硕士|博士|本科|申请材料|男|女|[，,。；;、]|$)"
+                    + "([\\u4e00-\\u9fa5]{2,4}?)(?=性别|性期|出生|工作单位|学位级别|所学专业|专业|课程|学号|指导教师|导师|职称|所在单位|论文题目|硕士|博士|本科|申请材料|男|女|[，,。；;、]|$)"
     );
     private static final Pattern IMAGE_FILENAME_PERSON_PATTERN = Pattern.compile(
             "\\d{6,}[-_－]\\d+([\\u4e00-\\u9fa5]{2,4})(?:jpe?g|png|heic|heif)?"

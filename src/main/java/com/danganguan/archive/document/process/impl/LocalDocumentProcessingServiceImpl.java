@@ -11,6 +11,8 @@ import com.danganguan.archive.task.entity.ArchiveTask;
 import com.danganguan.archive.task.enums.OutputFormat;
 import com.danganguan.archive.task.enums.PersonSplitStrategy;
 import lombok.RequiredArgsConstructor;
+import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
+import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -21,8 +23,11 @@ import org.springframework.stereotype.Service;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -42,6 +47,8 @@ import java.util.zip.ZipInputStream;
 public class LocalDocumentProcessingServiceImpl implements DocumentProcessingService {
     private static final float PDF_MARGIN = 24F;
     private static final long HEIC_CONVERT_TIMEOUT_SECONDS = 60L;
+    private static final long ENHANCE_INPUT_MAX_BYTES = 4_800_000L;
+    private static final int ENHANCE_INPUT_MAX_EDGE = 2200;
 
     private final FileStorageService fileStorageService;
     private final ImageEnhanceService imageEnhanceService;
@@ -87,13 +94,7 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         Path tempDir = fileStorageService.prepareWorkspaceFile(taskId, "zip-" + UUID.randomUUID()).normalize();
         try {
             Files.createDirectories(tempDir);
-            List<ImageInput> images = new ArrayList<>();
-            try {
-                unzipImagesWithCharset(source, tempDir, images, StandardCharsets.UTF_8);
-            } catch (IllegalArgumentException ex) {
-                clearDirectory(tempDir);
-                unzipImagesWithCharset(source, tempDir, images, Charset.forName("GBK"));
-            }
+            List<ImageInput> images = extractArchiveImages(source, tempDir);
             images.sort((left, right) -> naturalCompare(left.entryName(), right.entryName()));
             if (images.isEmpty()) {
                 throw new BizException("压缩包中没有可处理的图片");
@@ -106,6 +107,22 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             deleteTempDir(tempDir);
             throw ex;
         }
+    }
+
+    private List<ImageInput> extractArchiveImages(Path source, Path tempDir) throws IOException {
+        List<ImageInput> images = new ArrayList<>();
+        String archiveExt = ext(source.getFileName().toString());
+        if ("7z".equals(archiveExt)) {
+            extract7zImages(source, tempDir, images);
+            return images;
+        }
+        try {
+            unzipImagesWithCharset(source, tempDir, images, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            clearDirectory(tempDir);
+            unzipImagesWithCharset(source, tempDir, images, Charset.forName("GBK"));
+        }
+        return images;
     }
 
     private void unzipImagesWithCharset(Path source, Path tempDir, List<ImageInput> images, Charset charset) throws IOException {
@@ -136,13 +153,47 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         }
     }
 
+    private void extract7zImages(Path source, Path tempDir, List<ImageInput> images) throws IOException {
+        try (SevenZFile sevenZFile = SevenZFile.builder().setPath(source).get()) {
+            SevenZArchiveEntry entry;
+            int order = images.size();
+            byte[] buffer = new byte[8192];
+            while ((entry = sevenZFile.getNextEntry()) != null) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                String entryName = entry.getName().replace('\\', '/');
+                String ext = ext(entryName);
+                if ("pdf".equals(ext)) {
+                    throw new BizException("当前仅支持图片压缩包，压缩包内发现 PDF：" + filename(entryName));
+                }
+                if (!isImageExt(ext)) {
+                    continue;
+                }
+                String originalFilename = filename(entryName);
+                Path target = tempDir.resolve(UUID.randomUUID() + "-" + originalFilename).normalize();
+                if (!target.startsWith(tempDir)) {
+                    throw new BizException("压缩包内包含非法路径");
+                }
+                try (OutputStream output = Files.newOutputStream(target)) {
+                    int length;
+                    while ((length = sevenZFile.read(buffer)) > 0) {
+                        output.write(buffer, 0, length);
+                    }
+                }
+                images.add(new ImageInput(target, entryName, stripExt(originalFilename), normalizeImageExt(ext), ++order));
+            }
+        }
+    }
+
     private List<ImageInput> enhanceImagesIfNeeded(ArchiveTask task, List<ImageInput> images) {
         if (!Boolean.TRUE.equals(task.getEnableScanEnhance())) {
             return images;
         }
         List<ImageInput> enhancedImages = new ArrayList<>();
         for (ImageInput image : images) {
-            Path enhancedPath = imageEnhanceService.enhance(task, image.path());
+            Path enhanceInput = prepareEnhanceInput(image);
+            Path enhancedPath = imageEnhanceService.enhance(task, enhanceInput);
             if (enhancedPath == null) {
                 throw new BizException("扫描图像增强未返回有效图片");
             }
@@ -158,6 +209,24 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
         return enhancedImages;
     }
 
+    private Path prepareEnhanceInput(ImageInput image) {
+        Path readableImage = normalizeReadableImage(image);
+        try {
+            BufferedImage bufferedImage = readImage(readableImage);
+            int maxEdge = Math.max(bufferedImage.getWidth(), bufferedImage.getHeight());
+            if (Files.size(readableImage) <= ENHANCE_INPUT_MAX_BYTES && maxEdge <= ENHANCE_INPUT_MAX_EDGE
+                    && ("jpg".equals(ext(readableImage.getFileName().toString()))
+                    || "jpeg".equals(ext(readableImage.getFileName().toString())))) {
+                return readableImage;
+            }
+            Path target = readableImage.resolveSibling(stripExt(readableImage.getFileName().toString()) + ".enhance-input.jpg");
+            writeCompressedJpeg(bufferedImage, target);
+            return target;
+        } catch (IOException ex) {
+            throw new BizException("准备图像增强输入失败：" + ex.getMessage());
+        }
+    }
+
     private List<ProcessedFileResult> imagesToImageFiles(ArchiveTask task, List<ImageInput> images, String baseName) {
         if (!splitStrategy(task).isSinglePerson()) {
             throw new BizException("输出为图片时仅支持单人单组策略，固定元素拆分和 AI 边界拆分只支持 PDF 输出");
@@ -168,7 +237,7 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             String suffix = images.size() == 1 ? "" : "-第" + (i + 1) + "张";
             boolean heic = isHeicExt(image.ext());
             Path readableImage = normalizeReadableImage(image);
-            Path target = workspaceFile(task.getId(), firstNonBlank(image.baseName(), baseName) + suffix, heic ? "png" : image.ext());
+            Path target = workspaceFile(task.getId(), firstNonBlank(image.baseName(), baseName) + suffix, heic ? "jpg" : image.ext());
             copy(readableImage, target);
             results.add(new ProcessedFileResult(fileStorageService.toRelativePath(target), OutputFormat.PNG, 1, ""));
         }
@@ -256,7 +325,7 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
     }
 
     private Path convertHeicToPng(Path source) {
-        Path target = source.resolveSibling(stripExt(source.getFileName().toString()) + ".png");
+        Path target = source.resolveSibling(stripExt(source.getFileName().toString()) + ".jpg");
         if (Files.exists(target)) {
             return target;
         }
@@ -287,6 +356,76 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
             Thread.currentThread().interrupt();
             throw new BizException("HEIC 转 PNG 被中断");
         }
+    }
+
+    private void writeCompressedJpeg(BufferedImage source, Path target) {
+        BufferedImage resized = resizeIfNeeded(source);
+        float quality = 0.85F;
+        while (true) {
+            writeJpegWithQuality(resized, target, quality);
+            try {
+                if (Files.size(target) <= ENHANCE_INPUT_MAX_BYTES || quality <= 0.60F) {
+                    break;
+                }
+            } catch (IOException ex) {
+                throw new BizException("压缩图像增强输入失败：" + ex.getMessage());
+            }
+            quality -= 0.05F;
+        }
+    }
+
+    private void writeJpegWithQuality(BufferedImage image, Path target, float quality) {
+        try (var output = ImageIO.createImageOutputStream(target.toFile())) {
+            var writers = ImageIO.getImageWritersByFormatName("jpg");
+            if (!writers.hasNext()) {
+                throw new BizException("当前环境不支持 JPEG 压缩");
+            }
+            var writer = writers.next();
+            try {
+                writer.setOutput(output);
+                var params = writer.getDefaultWriteParam();
+                if (params.canWriteCompressed()) {
+                    params.setCompressionMode(javax.imageio.ImageWriteParam.MODE_EXPLICIT);
+                    params.setCompressionQuality(quality);
+                    writer.write(null, new javax.imageio.IIOImage(image, null, null), params);
+                } else {
+                    writer.write(image);
+                }
+            } finally {
+                writer.dispose();
+            }
+        } catch (IOException ex) {
+            throw new BizException("压缩图像增强输入失败：" + ex.getMessage());
+        }
+    }
+
+    private BufferedImage resizeIfNeeded(BufferedImage source) {
+        int width = source.getWidth();
+        int height = source.getHeight();
+        int maxEdge = Math.max(width, height);
+        BufferedImage rgb = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D rgbGraphics = rgb.createGraphics();
+        try {
+            rgbGraphics.drawImage(source, 0, 0, null);
+        } finally {
+            rgbGraphics.dispose();
+        }
+        if (maxEdge <= ENHANCE_INPUT_MAX_EDGE) {
+            return rgb;
+        }
+        double scale = (double) ENHANCE_INPUT_MAX_EDGE / maxEdge;
+        int targetWidth = Math.max(1, (int) Math.round(width * scale));
+        int targetHeight = Math.max(1, (int) Math.round(height * scale));
+        BufferedImage resized = new BufferedImage(targetWidth, targetHeight, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = resized.createGraphics();
+        try {
+            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+            graphics.drawImage(rgb, 0, 0, targetWidth, targetHeight, null);
+        } finally {
+            graphics.dispose();
+        }
+        return resized;
     }
 
     private void copy(Path source, Path target) {

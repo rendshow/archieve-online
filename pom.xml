@@ -22,6 +22,8 @@
         <mybatis-plus.version>3.5.9</mybatis-plus.version>
         <springdoc.version>2.6.0</springdoc.version>
         <pdfbox.version>2.0.31</pdfbox.version>
+        <commons-compress.version>1.26.2</commons-compress.version>
+        <xz.version>1.9</xz.version>
     </properties>
 
     <dependencies>
@@ -52,6 +54,16 @@
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>${pdfbox.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-compress</artifactId>
+            <version>${commons-compress.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.tukaani</groupId>
+            <artifactId>xz</artifactId>
+            <version>${xz.version}</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
