@@ -13,3 +13,15 @@ archive:
     rapidocr:
       command: python
       script: scripts/ocr/rapidocr_ocr.py
+  image-enhance:
+    # 可选：noop / quark-api
+    provider: noop
+    quark-api:
+      endpoint: https://scan-business.quark.cn/vision
+      client-id: your-client-id
+      client-secret: your-client-secret
+      function-option: auto_select
+      auto-crop: true
+      auto-rotate: true
+      need-return-image: true
+      timeout-seconds: 60
