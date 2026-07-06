@@ -5,6 +5,7 @@ import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.file.storage.FileStorageService;
 import com.danganguan.archive.file.storage.StoredFile;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -21,6 +22,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@ConditionalOnProperty(prefix = "archive.storage", name = "provider", havingValue = "local", matchIfMissing = true)
 public class LocalFileStorageServiceImpl implements FileStorageService {
     private final ArchiveStorageProperties properties;
 

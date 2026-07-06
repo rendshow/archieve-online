@@ -34,6 +34,20 @@ mybatis-plus:
 
 archive:
   storage-root: storage
+  storage:
+    provider: ${ARCHIVE_STORAGE_PROVIDER:local}
+    minio:
+      endpoint: ${ARCHIVE_MINIO_ENDPOINT:http://127.0.0.1:9000}
+      access-key: ${ARCHIVE_MINIO_ACCESS_KEY:}
+      secret-key: ${ARCHIVE_MINIO_SECRET_KEY:}
+      bucket: ${ARCHIVE_MINIO_BUCKET:danganguan-online}
+      create-bucket: ${ARCHIVE_MINIO_CREATE_BUCKET:true}
+  processing:
+    mode: ${ARCHIVE_PROCESSING_MODE:sync}
+    rabbitmq:
+      exchange: ${ARCHIVE_PROCESSING_RABBITMQ_EXCHANGE:archive.processing.exchange}
+      queue: ${ARCHIVE_PROCESSING_RABBITMQ_QUEUE:archive.processing.task.queue}
+      routing-key: ${ARCHIVE_PROCESSING_RABBITMQ_ROUTING_KEY:archive.processing.task}
   image-enhance:
     provider: ${ARCHIVE_IMAGE_ENHANCE_PROVIDER:noop}
     quark-api:

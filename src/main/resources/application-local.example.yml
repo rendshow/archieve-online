@@ -1,11 +1,20 @@
 archive:
-  ai:
-    provider: openai-compatible
-    openai-compatible:
-      base-url: https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions
-      api-key: your-api-key
-      model: your-model-or-endpoint
-      timeout-seconds: 60
+  storage:
+    # 可选：local / minio
+    provider: local
+    minio:
+      endpoint: http://127.0.0.1:9000
+      access-key: minioadmin
+      secret-key: minioadmin
+      bucket: danganguan-online
+      create-bucket: true
+  processing:
+    # 可选：sync / rabbitmq
+    mode: sync
+    rabbitmq:
+      exchange: archive.processing.exchange
+      queue: archive.processing.task.queue
+      routing-key: archive.processing.task
   boundary:
     # 可选：rule / hybrid / ai
     provider: rule
@@ -14,6 +23,13 @@ archive:
       base-url: https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions
       api-key: your-boundary-api-key
       model: your-boundary-model-or-endpoint
+      timeout-seconds: 60
+  ai:
+    provider: openai-compatible
+    openai-compatible:
+      base-url: https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions
+      api-key: your-api-key
+      model: your-model-or-endpoint
       timeout-seconds: 60
   ocr:
     # 可选：none / rapidocr
@@ -34,3 +50,10 @@ archive:
       auto-rotate: true
       need-return-image: true
       timeout-seconds: 60
+
+spring:
+  rabbitmq:
+    host: 127.0.0.1
+    port: 5672
+    username: danganguan
+    password: danganguan

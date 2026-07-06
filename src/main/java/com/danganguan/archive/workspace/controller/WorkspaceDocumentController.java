@@ -2,6 +2,7 @@ package com.danganguan.archive.workspace.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.danganguan.archive.common.response.Result;
+import com.danganguan.archive.task.processing.TaskProcessingSubmitter;
 import com.danganguan.archive.task.enums.TaskStatus;
 import com.danganguan.archive.workspace.dto.UpdateWorkspaceNameRequest;
 import com.danganguan.archive.workspace.dto.WorkspaceDocumentQuery;
@@ -19,11 +20,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class WorkspaceDocumentController {
     private final WorkspaceDocumentService workspaceDocumentService;
+    private final TaskProcessingSubmitter taskProcessingSubmitter;
 
     @Operation(summary = "处理上传任务", description = "将任务下的原始文件处理为工作区档案，并按任务配置触发文档分析、命名和标签生成")
     @PostMapping("/api/tasks/{taskId}/process")
     public Result<List<WorkspaceDocument>> process(@PathVariable Long taskId) {
-        return Result.ok(workspaceDocumentService.processTask(taskId));
+        return Result.ok(taskProcessingSubmitter.submit(taskId));
     }
 
     @Operation(summary = "查询处理状态", description = "查询指定上传任务当前处理状态")

@@ -72,27 +72,36 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         }
 
         task.setStatus(TaskStatus.PROCESSING);
+        task.setErrorMessage(null);
         task.setUpdatedAt(LocalDateTime.now());
         archiveTaskService.updateById(task);
 
-        List<WorkspaceDocument> documents = new ArrayList<>();
-        for (List<UploadedFile> groupFiles : groupFiles(files).values()) {
-            UploadedFile firstFile = groupFiles.get(0);
-            WorkspaceDocument existing = lambdaQuery()
-                    .eq(WorkspaceDocument::getTaskId, taskId)
-                    .eq(WorkspaceDocument::getSourceFileId, firstFile.getId())
-                    .last("LIMIT 1")
-                    .one();
-            if (existing != null) {
-                continue;
+        try {
+            List<WorkspaceDocument> documents = new ArrayList<>();
+            for (List<UploadedFile> groupFiles : groupFiles(files).values()) {
+                UploadedFile firstFile = groupFiles.get(0);
+                WorkspaceDocument existing = lambdaQuery()
+                        .eq(WorkspaceDocument::getTaskId, taskId)
+                        .eq(WorkspaceDocument::getSourceFileId, firstFile.getId())
+                        .last("LIMIT 1")
+                        .one();
+                if (existing != null) {
+                    continue;
+                }
+                documents.addAll(createWorkspaceDocuments(task, groupFiles));
             }
-            documents.addAll(createWorkspaceDocuments(task, groupFiles));
-        }
 
-        task.setStatus(TaskStatus.WAITING_REVIEW);
-        task.setUpdatedAt(LocalDateTime.now());
-        archiveTaskService.updateById(task);
-        return documents;
+            task.setStatus(TaskStatus.WAITING_REVIEW);
+            task.setUpdatedAt(LocalDateTime.now());
+            archiveTaskService.updateById(task);
+            return documents;
+        } catch (RuntimeException ex) {
+            task.setStatus(TaskStatus.FAILED);
+            task.setErrorMessage(limit(ex.getMessage(), 1000));
+            task.setUpdatedAt(LocalDateTime.now());
+            archiveTaskService.updateById(task);
+            throw ex;
+        }
     }
 
     @Override
@@ -244,6 +253,13 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
             return name;
         }
         return name + suffix;
+    }
+
+    private String limit(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 
     private boolean aiNamingEnabled(ArchiveTask task) {

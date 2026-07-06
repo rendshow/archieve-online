@@ -24,6 +24,7 @@
         <pdfbox.version>2.0.31</pdfbox.version>
         <commons-compress.version>1.26.2</commons-compress.version>
         <xz.version>1.9</xz.version>
+        <minio.version>8.5.17</minio.version>
     </properties>
 
     <dependencies>
@@ -34,6 +35,10 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
@@ -64,6 +69,11 @@
             <groupId>org.tukaani</groupId>
             <artifactId>xz</artifactId>
             <version>${xz.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>
