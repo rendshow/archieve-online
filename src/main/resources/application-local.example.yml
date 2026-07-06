@@ -6,6 +6,15 @@ archive:
       api-key: your-api-key
       model: your-model-or-endpoint
       timeout-seconds: 60
+  boundary:
+    # 可选：rule / hybrid / ai
+    provider: rule
+    rule-confidence-threshold: 0.80
+    openai-compatible:
+      base-url: https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions
+      api-key: your-boundary-api-key
+      model: your-boundary-model-or-endpoint
+      timeout-seconds: 60
   ocr:
     # 可选：none / rapidocr
     provider: rapidocr

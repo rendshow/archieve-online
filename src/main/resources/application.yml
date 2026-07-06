@@ -52,6 +52,14 @@ archive:
       api-key: ${ARCHIVE_AI_API_KEY:}
       model: ${ARCHIVE_AI_MODEL:}
       timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}
+  boundary:
+    provider: ${ARCHIVE_BOUNDARY_PROVIDER:rule}
+    rule-confidence-threshold: ${ARCHIVE_BOUNDARY_RULE_CONFIDENCE_THRESHOLD:0.80}
+    openai-compatible:
+      base-url: ${ARCHIVE_BOUNDARY_AI_BASE_URL:${ARCHIVE_AI_BASE_URL:https://api.openai.com/v1/chat/completions}}
+      api-key: ${ARCHIVE_BOUNDARY_AI_API_KEY:${ARCHIVE_AI_API_KEY:}}
+      model: ${ARCHIVE_BOUNDARY_AI_MODEL:${ARCHIVE_AI_MODEL:}}
+      timeout-seconds: ${ARCHIVE_BOUNDARY_AI_TIMEOUT_SECONDS:${ARCHIVE_AI_TIMEOUT_SECONDS:60}}
   ocr:
     provider: ${ARCHIVE_OCR_PROVIDER:rapidocr}
     timeout-seconds: ${ARCHIVE_OCR_TIMEOUT_SECONDS:30}

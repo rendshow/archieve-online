@@ -6,28 +6,40 @@ import com.danganguan.archive.common.exception.BizException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
-public class RuleBasedOcrPersonBoundaryDetectionService implements PersonBoundaryDetectionService {
+public class RuleBasedOcrPersonBoundaryDetectionService {
     private static final Pattern ANSI_PATTERN = Pattern.compile("\\u001B\\[[;\\d]*m");
 
     private final OcrService ocrService;
 
-    @Override
     public List<BoundaryGroup> detect(List<BoundaryImage> images) {
+        return detectWithConfidence(images).groups();
+    }
+
+    public BoundaryDetectionResult detectWithConfidence(List<BoundaryImage> images) {
         if (images == null || images.isEmpty()) {
             throw new BizException("AI 边界拆分时没有可分析的图片");
         }
         List<BoundaryGroup> groups = new ArrayList<>();
         List<Integer> current = new ArrayList<>();
+        int readablePages = 0;
+        int startPages = 0;
         for (BoundaryImage image : images) {
             OcrResult ocrResult = ocrService.recognize(image.imagePath());
             String text = normalizeText(ocrResult.text());
+            if (!text.isBlank()) {
+                readablePages++;
+            }
             boolean startPage = isLikelyPersonStartPage(text);
+            if (startPage) {
+                startPages++;
+            }
             if (!current.isEmpty() && startPage) {
                 groups.add(new BoundaryGroup(List.copyOf(current), "OCR 识别到新的人员首页"));
                 current = new ArrayList<>();
@@ -40,7 +52,8 @@ public class RuleBasedOcrPersonBoundaryDetectionService implements PersonBoundar
         if (groups.isEmpty()) {
             throw new BizException("AI 边界拆分未能生成有效分组");
         }
-        return groups;
+        return new BoundaryDetectionResult(groups, confidence(images.size(), readablePages, startPages, groups.size()),
+                "OCR 规则识别到 " + groups.size() + " 组人员材料");
     }
 
     private boolean isLikelyPersonStartPage(String text) {
@@ -82,5 +95,23 @@ public class RuleBasedOcrPersonBoundaryDetectionService implements PersonBoundar
         return ANSI_PATTERN.matcher(text)
                 .replaceAll("")
                 .replaceAll("\\s+", "");
+    }
+
+    private BigDecimal confidence(int totalPages, int readablePages, int startPages, int groupCount) {
+        if (totalPages <= 0 || groupCount <= 0) {
+            return BigDecimal.ZERO;
+        }
+        double readableRatio = (double) readablePages / totalPages;
+        double confidence = 0.35 + readableRatio * 0.35;
+        if (startPages == groupCount) {
+            confidence += 0.25;
+        } else if (startPages > 0) {
+            confidence += 0.10;
+        }
+        if (groupCount == 1 && totalPages > 8) {
+            confidence -= 0.25;
+        }
+        confidence = Math.max(0.10, Math.min(0.98, confidence));
+        return BigDecimal.valueOf(confidence).setScale(2, java.math.RoundingMode.HALF_UP);
     }
 }
