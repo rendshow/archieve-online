@@ -2,6 +2,9 @@ package com.danganguan.archive.document.process.impl;
 
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.process.ProcessedFileResult;
+import com.danganguan.archive.document.process.boundary.BoundaryGroup;
+import com.danganguan.archive.document.process.boundary.BoundaryImage;
+import com.danganguan.archive.document.process.boundary.PersonBoundaryDetectionService;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.file.storage.FileStorageService;
@@ -79,8 +82,36 @@ class LocalDocumentProcessingServiceImplTest {
         assertTrue(exception.getMessage().contains("必须是 n 的倍数"));
     }
 
+    @Test
+    void pdfOutputWithAiBoundaryUsesDetectedGroups() throws IOException {
+        Path zipPath = tempDir.resolve("images.zip");
+        writeImageZip(zipPath, "1.png", "2.png", "3.png", "4.png", "5.png");
+        PersonBoundaryDetectionService boundaryService = images -> List.of(
+                new BoundaryGroup(List.of(0, 1), "first"),
+                new BoundaryGroup(List.of(2, 3), "second"),
+                new BoundaryGroup(List.of(4), "third")
+        );
+        LocalDocumentProcessingServiceImpl service = service(boundaryService);
+
+        List<ProcessedFileResult> results = service.process(task(OutputFormat.PDF, PersonSplitStrategy.AI_PERSON_BOUNDARY, null), zipFile());
+
+        assertEquals(3, results.size());
+        assertEquals(2, results.get(0).pageCount());
+        assertEquals(2, results.get(1).pageCount());
+        assertEquals(1, results.get(2).pageCount());
+        for (ProcessedFileResult result : results) {
+            try (PDDocument document = PDDocument.load(tempDir.resolve(result.storagePath()).toFile())) {
+                assertEquals(result.pageCount(), document.getNumberOfPages());
+            }
+        }
+    }
+
     private LocalDocumentProcessingServiceImpl service() {
-        return new LocalDocumentProcessingServiceImpl(new TestFileStorageService(tempDir), new NoopImageEnhanceServiceImpl());
+        return service(images -> List.of(new BoundaryGroup(images.stream().map(BoundaryImage::index).toList(), "single")));
+    }
+
+    private LocalDocumentProcessingServiceImpl service(PersonBoundaryDetectionService boundaryService) {
+        return new LocalDocumentProcessingServiceImpl(new TestFileStorageService(tempDir), new NoopImageEnhanceServiceImpl(), boundaryService);
     }
 
     private ArchiveTask task(OutputFormat outputFormat, PersonSplitStrategy strategy, Integer fixedElementsPerPerson) {

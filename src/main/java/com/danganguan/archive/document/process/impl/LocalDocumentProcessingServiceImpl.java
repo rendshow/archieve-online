@@ -4,6 +4,9 @@ import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.process.DocumentProcessingService;
 import com.danganguan.archive.document.process.ImageEnhanceService;
 import com.danganguan.archive.document.process.ProcessedFileResult;
+import com.danganguan.archive.document.process.boundary.BoundaryGroup;
+import com.danganguan.archive.document.process.boundary.BoundaryImage;
+import com.danganguan.archive.document.process.boundary.PersonBoundaryDetectionService;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadType;
 import com.danganguan.archive.file.storage.FileStorageService;
@@ -52,6 +55,7 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
 
     private final FileStorageService fileStorageService;
     private final ImageEnhanceService imageEnhanceService;
+    private final PersonBoundaryDetectionService personBoundaryDetectionService;
 
     @Override
     public List<ProcessedFileResult> process(ArchiveTask task, UploadedFile file) {
@@ -281,8 +285,29 @@ public class LocalDocumentProcessingServiceImpl implements DocumentProcessingSer
     }
 
     private List<List<ImageInput>> splitImagesByAiBoundary(List<ImageInput> images) {
-        // AI 边界识别服务接入前，保持每个压缩包至少产出一个完整 PDF，且不跨压缩包合并。
-        return List.of(images);
+        List<BoundaryImage> candidates = new ArrayList<>();
+        for (int i = 0; i < images.size(); i++) {
+            ImageInput image = images.get(i);
+            candidates.add(new BoundaryImage(i, image.order(), image.entryName(), normalizeReadableImage(image)));
+        }
+        List<BoundaryGroup> boundaryGroups = personBoundaryDetectionService.detect(candidates);
+        List<List<ImageInput>> groups = new ArrayList<>();
+        for (BoundaryGroup boundaryGroup : boundaryGroups) {
+            List<ImageInput> group = new ArrayList<>();
+            for (Integer index : boundaryGroup.imageIndexes()) {
+                if (index == null || index < 0 || index >= images.size()) {
+                    throw new BizException("AI 边界拆分返回了非法图片序号：" + index);
+                }
+                group.add(images.get(index));
+            }
+            if (!group.isEmpty()) {
+                groups.add(group);
+            }
+        }
+        if (groups.isEmpty()) {
+            throw new BizException("AI 边界拆分未能生成有效分组");
+        }
+        return groups;
     }
 
     private void writeImagesToPdf(List<Path> images, Path target) {
