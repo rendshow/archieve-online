@@ -9,7 +9,7 @@ services:
       RABBITMQ_DEFAULT_USER: danganguan
       RABBITMQ_DEFAULT_PASS: danganguan
     volumes:
-      - rabbitmq-data:/var/lib/rabbitmq
+      - ./data/rabbitmq:/var/lib/rabbitmq
 
   minio:
     image: minio/minio:RELEASE.2025-04-22T22-12-26Z
@@ -22,8 +22,4 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     volumes:
-      - minio-data:/data
-
-volumes:
-  rabbitmq-data:
-  minio-data:
+      - ./data/minio:/data

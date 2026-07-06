@@ -4,6 +4,7 @@ target/
 
 # Local runtime files
 /storage/
+data/
 logs/
 *.log
 
