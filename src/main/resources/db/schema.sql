@@ -120,11 +120,12 @@ CREATE TABLE IF NOT EXISTS naming_log (
 CREATE TABLE IF NOT EXISTS archive_document (
   id BIGINT PRIMARY KEY,
   hall_id BIGINT NOT NULL,
-  task_id BIGINT NOT NULL,
-  workspace_document_id BIGINT NOT NULL,
+  task_id BIGINT,
+  workspace_document_id BIGINT,
   archive_no VARCHAR(128) NOT NULL,
   title VARCHAR(255) NOT NULL,
   folder_name VARCHAR(255),
+  folder_path VARCHAR(500),
   file_format VARCHAR(16) NOT NULL,
   storage_path VARCHAR(500) NOT NULL,
   page_count INT,
@@ -139,6 +140,7 @@ CREATE TABLE IF NOT EXISTS archive_document (
   UNIQUE KEY uk_archive_document_archive_no (archive_no),
   INDEX idx_archive_document_hall_id (hall_id),
   INDEX idx_archive_document_task_id (task_id),
+  INDEX idx_archive_document_folder_path (folder_path),
   INDEX idx_archive_document_title (title),
   INDEX idx_archive_document_archived_at (archived_at)
 );

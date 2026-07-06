@@ -15,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Method;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
@@ -76,6 +77,11 @@ class LocalDocumentAnalyzeServiceImplTest {
     private record TestFileStorageService(Path root) implements FileStorageService {
         @Override
         public StoredFile saveRaw(Long taskId, MultipartFile file, String fileExt) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StoredFile saveArchive(String objectKey, InputStream input) {
             throw new UnsupportedOperationException();
         }
 

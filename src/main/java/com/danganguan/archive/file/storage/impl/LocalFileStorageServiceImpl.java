@@ -53,6 +53,27 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
     }
 
     @Override
+    public StoredFile saveArchive(String objectKey, InputStream input) {
+        try {
+            Path root = storageRoot();
+            Path target = root.resolve(normalizeRelativePath(objectKey)).normalize();
+            if (!target.startsWith(root)) {
+                throw new BizException("非法文件路径");
+            }
+            Files.createDirectories(target.getParent());
+
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (DigestInputStream digestInput = new DigestInputStream(input, digest)) {
+                Files.copy(digestInput, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            return new StoredFile(toRelativePath(target), HexFormat.of().formatHex(digest.digest()), Files.size(target));
+        } catch (IOException | NoSuchAlgorithmException ex) {
+            throw new BizException("保存正式档案文件失败：" + ex.getMessage());
+        }
+    }
+
+    @Override
     public Path resolve(String relativePath) {
         Path root = storageRoot();
         Path path = root.resolve(relativePath).normalize();
@@ -90,5 +111,16 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
 
     private Path storageRoot() {
         return Path.of(properties.getStorageRoot()).toAbsolutePath().normalize();
+    }
+
+    private String normalizeRelativePath(String relativePath) {
+        String normalized = relativePath == null ? "" : relativePath.replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.isBlank() || normalized.contains("..")) {
+            throw new BizException("非法文件路径");
+        }
+        return normalized;
     }
 }

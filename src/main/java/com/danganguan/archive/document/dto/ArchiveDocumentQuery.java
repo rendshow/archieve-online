@@ -5,6 +5,7 @@ public record ArchiveDocumentQuery(
         Long taskId,
         String keyword,
         String folderName,
+        String folderPath,
         Long tagId,
         String tagName,
         Integer page,

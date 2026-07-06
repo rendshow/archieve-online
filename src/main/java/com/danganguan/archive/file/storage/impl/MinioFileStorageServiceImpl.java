@@ -68,6 +68,24 @@ public class MinioFileStorageServiceImpl implements FileStorageService {
     }
 
     @Override
+    public StoredFile saveArchive(String objectKey, InputStream input) {
+        try {
+            String normalizedKey = normalizeObjectKey(objectKey);
+            Path cachePath = cachePath(normalizedKey);
+            Files.createDirectories(cachePath.getParent());
+
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (DigestInputStream digestInput = new DigestInputStream(input, digest)) {
+                Files.copy(digestInput, cachePath, StandardCopyOption.REPLACE_EXISTING);
+            }
+            upload(normalizedKey, cachePath);
+            return new StoredFile(normalizedKey, HexFormat.of().formatHex(digest.digest()), Files.size(cachePath));
+        } catch (IOException | NoSuchAlgorithmException ex) {
+            throw new BizException("保存正式档案到 MinIO 失败：" + ex.getMessage());
+        }
+    }
+
+    @Override
     public Path resolve(String relativePath) {
         String objectKey = normalizeObjectKey(relativePath);
         Path cachePath = cachePath(objectKey);

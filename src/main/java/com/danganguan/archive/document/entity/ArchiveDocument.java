@@ -16,6 +16,7 @@ public class ArchiveDocument {
     private String archiveNo;
     private String title;
     private String folderName;
+    private String folderPath;
     private OutputFormat fileFormat;
     private String storagePath;
     private Integer pageCount;
@@ -42,6 +43,8 @@ public class ArchiveDocument {
     public void setTitle(String title) { this.title = title; }
     public String getFolderName() { return folderName; }
     public void setFolderName(String folderName) { this.folderName = folderName; }
+    public String getFolderPath() { return folderPath; }
+    public void setFolderPath(String folderPath) { this.folderPath = folderPath; }
     public OutputFormat getFileFormat() { return fileFormat; }
     public void setFileFormat(OutputFormat fileFormat) { this.fileFormat = fileFormat; }
     public String getStoragePath() { return storagePath; }

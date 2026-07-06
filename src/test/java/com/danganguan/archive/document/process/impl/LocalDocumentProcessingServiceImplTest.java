@@ -22,6 +22,7 @@ import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -153,6 +154,11 @@ class LocalDocumentProcessingServiceImplTest {
     private record TestFileStorageService(Path root) implements FileStorageService {
         @Override
         public StoredFile saveRaw(Long taskId, MultipartFile file, String fileExt) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public StoredFile saveArchive(String objectKey, InputStream input) {
             throw new UnsupportedOperationException();
         }
 

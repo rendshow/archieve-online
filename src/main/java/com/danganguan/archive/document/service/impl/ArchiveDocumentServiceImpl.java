@@ -61,6 +61,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
         archiveDocument.setArchiveNo(buildArchiveNo(workspaceDocument, now));
         archiveDocument.setTitle(workspaceDocument.getFinalName());
         archiveDocument.setFolderName(workspaceDocument.getFolderName());
+        archiveDocument.setFolderPath(workspaceDocument.getFolderName());
         archiveDocument.setFileFormat(workspaceDocument.getOutputFormat());
         archiveDocument.setStoragePath(workspaceDocument.getStoragePath());
         archiveDocument.setPageCount(workspaceDocument.getPageCount());
@@ -96,6 +97,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
                 .eq(query.hallId() != null, ArchiveDocument::getHallId, query.hallId())
                 .eq(query.taskId() != null, ArchiveDocument::getTaskId, query.taskId())
                 .like(query.folderName() != null && !query.folderName().isBlank(), ArchiveDocument::getFolderName, query.folderName())
+                .like(query.folderPath() != null && !query.folderPath().isBlank(), ArchiveDocument::getFolderPath, query.folderPath())
                 .orderByDesc(ArchiveDocument::getArchivedAt);
 
         if (query.keyword() != null && !query.keyword().isBlank()) {
@@ -104,6 +106,8 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
                     .like(ArchiveDocument::getTitle, keyword)
                     .or()
                     .like(ArchiveDocument::getFolderName, keyword)
+                    .or()
+                    .like(ArchiveDocument::getFolderPath, keyword)
                     .or()
                     .like(ArchiveDocument::getAiSummary, keyword)
                     .or()
