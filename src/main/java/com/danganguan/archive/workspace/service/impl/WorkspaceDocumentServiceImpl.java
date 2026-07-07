@@ -250,7 +250,8 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         }
         return uploadedFileService.listByIds(fileIds).stream()
                 .filter(file -> file.getTaskId().equals(taskId))
-                .filter(file -> file.getStatus() == UploadFileStatus.QUEUED)
+                .filter(file -> file.getStatus() == UploadFileStatus.QUEUED
+                        || file.getStatus() == UploadFileStatus.PROCESSING)
                 .sorted(Comparator
                         .comparing(UploadedFile::getUploadGroupNo, Comparator.nullsLast(String::compareTo))
                         .thenComparing(UploadedFile::getGroupOrder, Comparator.nullsLast(Integer::compareTo))
