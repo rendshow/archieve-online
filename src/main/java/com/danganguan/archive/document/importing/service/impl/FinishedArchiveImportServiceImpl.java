@@ -5,6 +5,7 @@ import com.danganguan.archive.common.config.ArchiveStorageProperties;
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
+import com.danganguan.archive.document.importing.FinishedArchiveImportMessage;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveImportResult;
 import com.danganguan.archive.document.importing.entity.FinishedArchiveImportJob;
 import com.danganguan.archive.document.importing.enums.FinishedArchiveImportJobStatus;
@@ -20,7 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
 import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
-import org.springframework.core.task.TaskExecutor;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -56,7 +57,7 @@ public class FinishedArchiveImportServiceImpl
     private final ArchiveDocumentService archiveDocumentService;
     private final FileStorageService fileStorageService;
     private final ArchiveStorageProperties properties;
-    private final TaskExecutor applicationTaskExecutor;
+    private final RabbitTemplate rabbitTemplate;
 
     @Override
     public FinishedArchiveImportResult importFinishedArchives(Long hallId, List<MultipartFile> files) {
@@ -99,7 +100,7 @@ public class FinishedArchiveImportServiceImpl
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
 
-        applicationTaskExecutor.execute(() -> processJob(job.getId()));
+        submitJob(job.getId());
         return job;
     }
 
@@ -163,6 +164,19 @@ public class FinishedArchiveImportServiceImpl
             throw new BizException("请上传文件夹文件或压缩包");
         }
         return hall;
+    }
+
+    private void submitJob(Long jobId) {
+        if ("rabbitmq".equalsIgnoreCase(properties.getProcessing().getMode())) {
+            ArchiveStorageProperties.Rabbitmq rabbitmq = properties.getProcessing().getRabbitmq();
+            rabbitTemplate.convertAndSend(
+                    rabbitmq.getExchange(),
+                    rabbitmq.getImportRoutingKey(),
+                    new FinishedArchiveImportMessage(jobId)
+            );
+            return;
+        }
+        processJob(jobId);
     }
 
     private void stageFiles(List<MultipartFile> files, Path sourceRoot) {

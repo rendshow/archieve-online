@@ -126,6 +126,8 @@ public class ArchiveStorageProperties {
         private String exchange = "archive.processing.exchange";
         private String queue = "archive.processing.task.queue";
         private String routingKey = "archive.processing.task";
+        private String importQueue = "archive.import.finished.queue";
+        private String importRoutingKey = "archive.import.finished";
 
         public String getExchange() {
             return exchange;
@@ -149,6 +151,22 @@ public class ArchiveStorageProperties {
 
         public void setRoutingKey(String routingKey) {
             this.routingKey = routingKey;
+        }
+
+        public String getImportQueue() {
+            return importQueue;
+        }
+
+        public void setImportQueue(String importQueue) {
+            this.importQueue = importQueue;
+        }
+
+        public String getImportRoutingKey() {
+            return importRoutingKey;
+        }
+
+        public void setImportRoutingKey(String importRoutingKey) {
+            this.importRoutingKey = importRoutingKey;
         }
     }
 }

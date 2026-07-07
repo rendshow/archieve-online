@@ -48,6 +48,8 @@ archive:
       exchange: ${ARCHIVE_PROCESSING_RABBITMQ_EXCHANGE:archive.processing.exchange}
       queue: ${ARCHIVE_PROCESSING_RABBITMQ_QUEUE:archive.processing.task.queue}
       routing-key: ${ARCHIVE_PROCESSING_RABBITMQ_ROUTING_KEY:archive.processing.task}
+      import-queue: ${ARCHIVE_IMPORT_RABBITMQ_QUEUE:archive.import.finished.queue}
+      import-routing-key: ${ARCHIVE_IMPORT_RABBITMQ_ROUTING_KEY:archive.import.finished}
   image-enhance:
     provider: ${ARCHIVE_IMAGE_ENHANCE_PROVIDER:noop}
     quark-api:

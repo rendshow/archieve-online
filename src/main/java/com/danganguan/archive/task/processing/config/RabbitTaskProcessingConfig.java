@@ -21,6 +21,11 @@ public class RabbitTaskProcessingConfig {
     }
 
     @Bean
+    public Queue archiveFinishedImportQueue(ArchiveStorageProperties properties) {
+        return new Queue(properties.getProcessing().getRabbitmq().getImportQueue(), true);
+    }
+
+    @Bean
     public DirectExchange archiveTaskExchange(ArchiveStorageProperties properties) {
         return new DirectExchange(properties.getProcessing().getRabbitmq().getExchange(), true, false);
     }
@@ -31,6 +36,14 @@ public class RabbitTaskProcessingConfig {
         return BindingBuilder.bind(archiveTaskQueue)
                 .to(archiveTaskExchange)
                 .with(properties.getProcessing().getRabbitmq().getRoutingKey());
+    }
+
+    @Bean
+    public Binding archiveFinishedImportBinding(Queue archiveFinishedImportQueue, DirectExchange archiveTaskExchange,
+                                                ArchiveStorageProperties properties) {
+        return BindingBuilder.bind(archiveFinishedImportQueue)
+                .to(archiveTaskExchange)
+                .with(properties.getProcessing().getRabbitmq().getImportRoutingKey());
     }
 
     @Bean
