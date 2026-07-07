@@ -50,6 +50,30 @@ class RuleBasedAiNamingServiceTest {
         assertEquals("N2007-JX12•11•21-2待识别姓名", result.suggestedName());
     }
 
+    @Test
+    void shouldReplaceStudentNoAndNamePlaceholders() {
+        ArchiveTask task = taskWithExample("学号-姓名.pdf");
+        UploadedFile file = uploadedFile("scan.zip");
+        file.setUploadType(UploadType.ZIP);
+        DocumentAnalyzeResult analyzeResult = analyzeResult("李四", "学号：2024233088 姓名：李四");
+
+        AiNamingResult result = namingService.name(new AiNamingRequest(task, file, analyzeResult, 1));
+
+        assertEquals("2024233088-李四", result.suggestedName());
+    }
+
+    @Test
+    void shouldFollowStudentNoNameExample() {
+        ArchiveTask task = taskWithExample("2024233088-王二.pdf");
+        UploadedFile file = uploadedFile("scan.zip");
+        file.setUploadType(UploadType.ZIP);
+        DocumentAnalyzeResult analyzeResult = analyzeResult("李四", "姓名：李四 学号：2024999001");
+
+        AiNamingResult result = namingService.name(new AiNamingRequest(task, file, analyzeResult, 1));
+
+        assertEquals("2024999001-李四", result.suggestedName());
+    }
+
     private ArchiveTask taskWithExample(String example) {
         ArchiveTask task = new ArchiveTask();
         task.setFileNameExample(example);
@@ -64,8 +88,12 @@ class RuleBasedAiNamingServiceTest {
     }
 
     private DocumentAnalyzeResult analyzeResult(String personName) {
+        return analyzeResult(personName, "姓名：" + (personName == null ? "" : personName));
+    }
+
+    private DocumentAnalyzeResult analyzeResult(String personName, String extractedText) {
         return new DocumentAnalyzeResult(
-                "姓名：" + (personName == null ? "" : personName),
+                extractedText,
                 "测试摘要",
                 personName,
                 List.of("测试"),

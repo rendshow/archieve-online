@@ -32,6 +32,15 @@ public class RabbitTaskProcessingSubmitter implements TaskProcessingSubmitter {
         if (task == null) {
             throw new BizException("上传任务不存在");
         }
+        if (task.getStatus() == TaskStatus.PENDING_PROCESS || task.getStatus() == TaskStatus.PROCESSING) {
+            return workspaceDocumentService.listByTask(taskId);
+        }
+        if (task.getStatus() == TaskStatus.WAITING_REVIEW || task.getStatus() == TaskStatus.COMPLETED) {
+            List<WorkspaceDocument> existing = workspaceDocumentService.listByTask(taskId);
+            if (!existing.isEmpty()) {
+                return existing;
+            }
+        }
         task.setStatus(TaskStatus.PENDING_PROCESS);
         task.setErrorMessage(null);
         task.setUpdatedAt(LocalDateTime.now());

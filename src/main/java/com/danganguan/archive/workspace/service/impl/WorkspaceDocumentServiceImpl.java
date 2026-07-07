@@ -16,6 +16,7 @@ import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.process.DocumentProcessingService;
 import com.danganguan.archive.document.process.ProcessedFileResult;
 import com.danganguan.archive.file.entity.UploadedFile;
+import com.danganguan.archive.file.enums.UploadFileStatus;
 import com.danganguan.archive.file.service.UploadedFileService;
 import com.danganguan.archive.tag.enums.DocumentType;
 import com.danganguan.archive.tag.enums.TagSource;
@@ -34,7 +35,6 @@ import com.danganguan.archive.workspace.service.NamingLogService;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -57,18 +57,33 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private final DefaultWorkspaceNamingService defaultWorkspaceNamingService;
 
     @Override
-    @Transactional
     public List<WorkspaceDocument> processTask(Long taskId) {
         ArchiveTask task = archiveTaskService.getById(taskId);
         if (task == null) {
             throw new BizException("上传任务不存在");
         }
+        if (task.getStatus() == TaskStatus.PROCESSING) {
+            return listByTask(taskId);
+        }
+        if ((task.getStatus() == TaskStatus.WAITING_REVIEW || task.getStatus() == TaskStatus.COMPLETED)
+                && hasNoPendingSavedFiles(taskId)) {
+            return listByTask(taskId);
+        }
         if (aiNamingEnabled(task)) {
             validateNamingReference(task);
         }
-        List<UploadedFile> files = uploadedFileService.listByTask(taskId);
+        List<UploadedFile> files = uploadedFileService.listByTask(taskId).stream()
+                .filter(file -> file.getStatus() == UploadFileStatus.SAVED)
+                .toList();
         if (files.isEmpty()) {
-            throw new BizException("任务下没有可处理的上传文件");
+            List<WorkspaceDocument> existing = listByTask(taskId);
+            if (!existing.isEmpty()) {
+                task.setStatus(TaskStatus.WAITING_REVIEW);
+                task.setUpdatedAt(LocalDateTime.now());
+                archiveTaskService.updateById(task);
+                return existing;
+            }
+            throw new BizException("任务下没有可处理的新增上传文件");
         }
 
         task.setStatus(TaskStatus.PROCESSING);
@@ -86,9 +101,11 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
                         .last("LIMIT 1")
                         .one();
                 if (existing != null) {
+                    markFilesProcessed(groupFiles);
                     continue;
                 }
                 documents.addAll(createWorkspaceDocuments(task, groupFiles));
+                markFilesProcessed(groupFiles);
             }
 
             task.setStatus(TaskStatus.WAITING_REVIEW);
@@ -177,6 +194,22 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
             groups.computeIfAbsent(groupNo, ignored -> new ArrayList<>()).add(file);
         }
         return groups;
+    }
+
+    private boolean hasNoPendingSavedFiles(Long taskId) {
+        return uploadedFileService.lambdaQuery()
+                .eq(UploadedFile::getTaskId, taskId)
+                .eq(UploadedFile::getStatus, UploadFileStatus.SAVED)
+                .count() == 0;
+    }
+
+    private void markFilesProcessed(List<UploadedFile> files) {
+        LocalDateTime now = LocalDateTime.now();
+        for (UploadedFile file : files) {
+            file.setStatus(UploadFileStatus.PROCESSED);
+            file.setUpdatedAt(now);
+            uploadedFileService.updateById(file);
+        }
     }
 
     private List<WorkspaceDocument> createWorkspaceDocuments(ArchiveTask task, List<UploadedFile> groupFiles) {

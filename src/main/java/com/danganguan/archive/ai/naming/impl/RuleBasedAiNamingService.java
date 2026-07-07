@@ -16,6 +16,8 @@ import java.util.regex.Pattern;
 @Service
 public class RuleBasedAiNamingService implements AiNamingService {
     private static final Pattern NUMBER_NAME_TAIL = Pattern.compile("^(.*?)(\\d+)([\\u4e00-\\u9fa5]{2,4})$");
+    private static final Pattern STUDENT_NO_NAME_TAIL = Pattern.compile("^(.*?)([A-Za-z]?\\d{6,20})([-_•·.．\\s]+)([\\u4e00-\\u9fa5]{2,4})$");
+    private static final Pattern STUDENT_NO = Pattern.compile("(?:学号|考号|准考证号|学生证号)[:：\\s]*([A-Za-z]?\\d{6,20})");
     private static final Pattern CHINESE_NAME_TAIL = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})$");
 
     @Override
@@ -45,6 +47,18 @@ public class RuleBasedAiNamingService implements AiNamingService {
         String detectedName = analyzeResult == null ? null : analyzeResult.detectedPersonName();
         String sourceName = file.getUploadType() == UploadType.ZIP ? null : parseChineseName(stripExt(file.getOriginalName()));
         String personName = firstNonBlank(detectedName, sourceName, fallbackPersonName(file));
+        String studentNo = detectStudentNo(analyzeResult);
+        String placeholderName = applyPlaceholderTemplate(stripExt(task.getFileNameExample()), personName, studentNo);
+        if (placeholderName != null) {
+            return safeName(placeholderName);
+        }
+        StudentNoConvention studentNoConvention = parseStudentNoConvention(stripExt(task.getFileNameExample()));
+        if (studentNoConvention != null) {
+            return safeName(studentNoConvention.prefix()
+                    + firstNonBlank(studentNo, studentNoConvention.studentNo())
+                    + studentNoConvention.separator()
+                    + personName);
+        }
         NamingConvention exampleConvention = parseNumberNameConvention(stripExt(task.getFileNameExample()));
         if (exampleConvention != null) {
             return safeName(exampleConvention.prefix() + formatSequence(sequenceNo, exampleConvention.numberWidth()) + personName);
@@ -66,6 +80,44 @@ public class RuleBasedAiNamingService implements AiNamingService {
             return null;
         }
         return new NamingConvention(matcher.group(1), matcher.group(2).length(), matcher.group(0));
+    }
+
+    private StudentNoConvention parseStudentNoConvention(String filename) {
+        if (filename == null || filename.isBlank()) {
+            return null;
+        }
+        Matcher matcher = STUDENT_NO_NAME_TAIL.matcher(filename.trim());
+        if (!matcher.matches()) {
+            return null;
+        }
+        return new StudentNoConvention(matcher.group(1), matcher.group(2), matcher.group(3));
+    }
+
+    private String applyPlaceholderTemplate(String example, String personName, String studentNo) {
+        if (example == null || example.isBlank()) {
+            return null;
+        }
+        String template = example.trim();
+        boolean hasStudentNoPlaceholder = template.contains("学号");
+        boolean hasPersonNamePlaceholder = template.contains("姓名");
+        if (!hasStudentNoPlaceholder && !hasPersonNamePlaceholder) {
+            return null;
+        }
+        if (hasStudentNoPlaceholder) {
+            template = template.replace("学号", firstNonBlank(studentNo, "待识别学号"));
+        }
+        if (hasPersonNamePlaceholder) {
+            template = template.replace("姓名", personName);
+        }
+        return template;
+    }
+
+    private String detectStudentNo(DocumentAnalyzeResult analyzeResult) {
+        if (analyzeResult == null || analyzeResult.extractedText() == null || analyzeResult.extractedText().isBlank()) {
+            return null;
+        }
+        Matcher matcher = STUDENT_NO.matcher(analyzeResult.extractedText().replaceAll("\\s+", ""));
+        return matcher.find() ? matcher.group(1) : null;
     }
 
     private String parseChineseName(String filename) {
@@ -114,5 +166,8 @@ public class RuleBasedAiNamingService implements AiNamingService {
     }
 
     private record NamingConvention(String prefix, int numberWidth, String fullName) {
+    }
+
+    private record StudentNoConvention(String prefix, String studentNo, String separator) {
     }
 }
