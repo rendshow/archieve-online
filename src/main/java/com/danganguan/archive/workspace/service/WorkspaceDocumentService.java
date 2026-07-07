@@ -20,5 +20,9 @@ public interface WorkspaceDocumentService extends IService<WorkspaceDocument> {
 
     TaskStatus processStatus(Long taskId);
 
+    List<Long> prepareFailedFilesForRetry(Long taskId);
+
+    List<Long> recoverStuckProcessingFiles(Long taskId, int timeoutMinutes);
+
     WorkspaceDocument updateName(Long id, UpdateWorkspaceNameRequest request);
 }

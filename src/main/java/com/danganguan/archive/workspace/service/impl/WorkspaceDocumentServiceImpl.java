@@ -193,6 +193,37 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     }
 
     @Override
+    public List<Long> prepareFailedFilesForRetry(Long taskId) {
+        ArchiveTask task = getTaskOrThrow(taskId);
+        List<UploadedFile> files = uploadedFileService.lambdaQuery()
+                .eq(UploadedFile::getTaskId, taskId)
+                .eq(UploadedFile::getStatus, UploadFileStatus.FAILED)
+                .list();
+        if (files.isEmpty()) {
+            throw new BizException("任务下没有失败文件可重试");
+        }
+        resetFilesForRetry(task, files, "失败文件已恢复为待处理");
+        return files.stream().map(UploadedFile::getId).toList();
+    }
+
+    @Override
+    public List<Long> recoverStuckProcessingFiles(Long taskId, int timeoutMinutes) {
+        ArchiveTask task = getTaskOrThrow(taskId);
+        int safeTimeoutMinutes = timeoutMinutes < 1 ? 30 : timeoutMinutes;
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(safeTimeoutMinutes);
+        List<UploadedFile> files = uploadedFileService.lambdaQuery()
+                .eq(UploadedFile::getTaskId, taskId)
+                .in(UploadedFile::getStatus, List.of(UploadFileStatus.QUEUED, UploadFileStatus.PROCESSING))
+                .le(UploadedFile::getUpdatedAt, cutoff)
+                .list();
+        if (files.isEmpty()) {
+            throw new BizException("任务下没有超时卡住的处理文件");
+        }
+        resetFilesForRetry(task, files, "超时处理文件已恢复为待处理");
+        return files.stream().map(UploadedFile::getId).toList();
+    }
+
+    @Override
     public WorkspaceDocument updateName(Long id, UpdateWorkspaceNameRequest request) {
         if (request.finalName() == null || request.finalName().isBlank()) {
             throw new BizException("文件名不能为空");
@@ -205,6 +236,31 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         document.setUpdatedAt(LocalDateTime.now());
         updateById(document);
         return document;
+    }
+
+    private ArchiveTask getTaskOrThrow(Long taskId) {
+        ArchiveTask task = archiveTaskService.getById(taskId);
+        if (task == null) {
+            throw new BizException("上传任务不存在");
+        }
+        return task;
+    }
+
+    private void resetFilesForRetry(ArchiveTask task, List<UploadedFile> files, String message) {
+        LocalDateTime now = LocalDateTime.now();
+        for (UploadedFile file : files) {
+            file.setStatus(UploadFileStatus.SAVED);
+            file.setErrorMessage(null);
+            file.setUpdatedAt(now);
+            uploadedFileService.updateById(file);
+        }
+        task.setStatus(TaskStatus.DRAFT);
+        task.setErrorMessage(null);
+        task.setUpdatedAt(now);
+        archiveTaskService.updateById(task);
+        eventPublisher.sourceFilesChanged(task.getId(), task.getHallId(), files, UploadFileStatus.SAVED.name(), message);
+        eventPublisher.publish(ArchiveRealtimeEvent.taskChanged(
+                task.getId(), task.getHallId(), task.getStatus().name(), message));
     }
 
     private Map<String, List<UploadedFile>> groupFiles(List<UploadedFile> files) {

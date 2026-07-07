@@ -28,6 +28,21 @@ public class WorkspaceDocumentController {
         return Result.ok(taskProcessingSubmitter.submit(taskId));
     }
 
+    @Operation(summary = "重试失败源文件", description = "将任务下 FAILED 的原始文件恢复为 SAVED 并重新提交后台处理")
+    @PostMapping("/api/tasks/{taskId}/failed-files/retry")
+    public Result<List<WorkspaceDocument>> retryFailedFiles(@PathVariable Long taskId) {
+        workspaceDocumentService.prepareFailedFilesForRetry(taskId);
+        return Result.ok(taskProcessingSubmitter.submit(taskId));
+    }
+
+    @Operation(summary = "恢复卡住源文件", description = "将超过阈值仍处于 QUEUED/PROCESSING 的原始文件恢复为 SAVED 并重新提交后台处理")
+    @PostMapping("/api/tasks/{taskId}/stuck-files/recover")
+    public Result<List<WorkspaceDocument>> recoverStuckFiles(@PathVariable Long taskId,
+                                                             @RequestParam(defaultValue = "30") int timeoutMinutes) {
+        workspaceDocumentService.recoverStuckProcessingFiles(taskId, timeoutMinutes);
+        return Result.ok(taskProcessingSubmitter.submit(taskId));
+    }
+
     @Operation(summary = "查询处理状态", description = "查询指定上传任务当前处理状态")
     @GetMapping("/api/tasks/{taskId}/process-status")
     public Result<TaskStatus> processStatus(@PathVariable Long taskId) {
