@@ -20,6 +20,7 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
+        ensureFinishedArchiveImportJobTable();
         if (!tableExists("archive_document")) {
             return;
         }
@@ -31,6 +32,33 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
         }
         jdbcTemplate.execute("ALTER TABLE archive_document MODIFY COLUMN task_id BIGINT NULL");
         jdbcTemplate.execute("ALTER TABLE archive_document MODIFY COLUMN workspace_document_id BIGINT NULL");
+    }
+
+    private void ensureFinishedArchiveImportJobTable() throws SQLException {
+        if (tableExists("finished_archive_import_job")) {
+            return;
+        }
+        jdbcTemplate.execute("""
+                CREATE TABLE finished_archive_import_job (
+                  id BIGINT PRIMARY KEY,
+                  hall_id BIGINT NOT NULL,
+                  batch_no VARCHAR(64) NOT NULL,
+                  status VARCHAR(32) NOT NULL,
+                  total_count INT NOT NULL DEFAULT 0,
+                  imported_count INT NOT NULL DEFAULT 0,
+                  skipped_count INT NOT NULL DEFAULT 0,
+                  skipped_preview TEXT,
+                  error_message VARCHAR(1000),
+                  source_root_path VARCHAR(500),
+                  started_at DATETIME,
+                  finished_at DATETIME,
+                  created_at DATETIME NOT NULL,
+                  updated_at DATETIME NOT NULL,
+                  INDEX idx_finished_archive_import_job_hall_id (hall_id),
+                  INDEX idx_finished_archive_import_job_status (status),
+                  INDEX idx_finished_archive_import_job_created_at (created_at)
+                )
+                """);
     }
 
     private boolean tableExists(String tableName) throws SQLException {

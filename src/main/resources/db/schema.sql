@@ -144,3 +144,23 @@ CREATE TABLE IF NOT EXISTS archive_document (
   INDEX idx_archive_document_title (title),
   INDEX idx_archive_document_archived_at (archived_at)
 );
+
+CREATE TABLE IF NOT EXISTS finished_archive_import_job (
+  id BIGINT PRIMARY KEY,
+  hall_id BIGINT NOT NULL,
+  batch_no VARCHAR(64) NOT NULL,
+  status VARCHAR(32) NOT NULL,
+  total_count INT NOT NULL DEFAULT 0,
+  imported_count INT NOT NULL DEFAULT 0,
+  skipped_count INT NOT NULL DEFAULT 0,
+  skipped_preview TEXT,
+  error_message VARCHAR(1000),
+  source_root_path VARCHAR(500),
+  started_at DATETIME,
+  finished_at DATETIME,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  INDEX idx_finished_archive_import_job_hall_id (hall_id),
+  INDEX idx_finished_archive_import_job_status (status),
+  INDEX idx_finished_archive_import_job_created_at (created_at)
+);
