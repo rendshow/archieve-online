@@ -67,9 +67,11 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
             savedFiles.add(saveOne(task, file, ext, uploadType, groupType, groupNo, groupOrder));
         }
 
-        task.setStatus(TaskStatus.DRAFT);
-        task.setUpdatedAt(LocalDateTime.now());
-        archiveTaskService.updateById(task);
+        if (task.getStatus() != TaskStatus.PENDING_PROCESS && task.getStatus() != TaskStatus.PROCESSING) {
+            task.setStatus(TaskStatus.DRAFT);
+            task.setUpdatedAt(LocalDateTime.now());
+            archiveTaskService.updateById(task);
+        }
         return savedFiles;
     }
 
