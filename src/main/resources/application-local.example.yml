@@ -33,6 +33,9 @@ archive:
       api-key: your-api-key
       model: your-model-or-endpoint
       timeout-seconds: 60
+  naming:
+    # 可选：local / openai-compatible。openai-compatible 会复用 archive.ai.openai-compatible 的模型配置。
+    provider: openai-compatible
   ocr:
     # 可选：none / rapidocr
     provider: rapidocr

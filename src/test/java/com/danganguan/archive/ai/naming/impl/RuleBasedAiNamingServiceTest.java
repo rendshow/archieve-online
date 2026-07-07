@@ -14,7 +14,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class RuleBasedAiNamingServiceTest {
-    private final RuleBasedAiNamingService namingService = new RuleBasedAiNamingService();
+    private final RuleBasedAiNamingService namingService = new RuleBasedAiNamingService(new RuleBasedNamingEngine());
 
     @Test
     void shouldFollowNumberNameExampleWhenPersonNameDetected() {

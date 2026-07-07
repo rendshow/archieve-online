@@ -68,6 +68,8 @@ archive:
       api-key: ${ARCHIVE_AI_API_KEY:}
       model: ${ARCHIVE_AI_MODEL:}
       timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}
+  naming:
+    provider: ${ARCHIVE_NAMING_PROVIDER:local}
   boundary:
     provider: ${ARCHIVE_BOUNDARY_PROVIDER:rule}
     rule-confidence-threshold: ${ARCHIVE_BOUNDARY_RULE_CONFIDENCE_THRESHOLD:0.80}
