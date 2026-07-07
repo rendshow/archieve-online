@@ -1,7 +1,9 @@
 package com.danganguan.archive.file.controller;
 
+import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.file.entity.UploadedFile;
+import com.danganguan.archive.file.enums.UploadFileStatus;
 import com.danganguan.archive.file.service.UploadedFileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,6 +35,13 @@ public class UploadedFileController {
     @Operation(summary = "删除原始上传文件", description = "软删除单个原始上传文件")
     @DeleteMapping("/api/uploaded-files/{fileId}")
     public Result<Void> delete(@PathVariable Long fileId) {
+        UploadedFile file = uploadedFileService.getById(fileId);
+        if (file == null) {
+            throw new BizException("原始上传文件不存在");
+        }
+        if (file.getStatus() == UploadFileStatus.QUEUED || file.getStatus() == UploadFileStatus.PROCESSING) {
+            throw new BizException("处理中的文件不可删除");
+        }
         uploadedFileService.removeById(fileId);
         return Result.ok();
     }
