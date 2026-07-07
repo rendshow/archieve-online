@@ -12,6 +12,8 @@ import java.util.List;
 public interface WorkspaceDocumentService extends IService<WorkspaceDocument> {
     List<WorkspaceDocument> processTask(Long taskId);
 
+    List<WorkspaceDocument> processTask(Long taskId, List<Long> fileIds);
+
     List<WorkspaceDocument> listByTask(Long taskId);
 
     IPage<WorkspaceDocument> pageDocuments(WorkspaceDocumentQuery query);

@@ -24,7 +24,7 @@ public class RabbitTaskProcessingConsumer {
     @RabbitListener(queues = "${archive.processing.rabbitmq.queue}")
     public void process(TaskProcessMessage message) {
         try {
-            workspaceDocumentService.processTask(message.taskId());
+            workspaceDocumentService.processTask(message.taskId(), message.fileIds());
         } catch (Exception ex) {
             ArchiveTask task = archiveTaskService.getById(message.taskId());
             if (task != null) {

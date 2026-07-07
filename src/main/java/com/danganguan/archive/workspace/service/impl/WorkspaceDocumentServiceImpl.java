@@ -38,6 +38,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -58,29 +59,34 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
 
     @Override
     public List<WorkspaceDocument> processTask(Long taskId) {
+        return processTask(taskId, List.of());
+    }
+
+    @Override
+    public List<WorkspaceDocument> processTask(Long taskId, List<Long> fileIds) {
         ArchiveTask task = archiveTaskService.getById(taskId);
         if (task == null) {
             throw new BizException("上传任务不存在");
         }
-        if (task.getStatus() == TaskStatus.PROCESSING) {
+        boolean explicitFileBatch = fileIds != null && !fileIds.isEmpty();
+        if (task.getStatus() == TaskStatus.PROCESSING && !explicitFileBatch) {
             return listByTask(taskId);
         }
         if ((task.getStatus() == TaskStatus.WAITING_REVIEW || task.getStatus() == TaskStatus.COMPLETED)
-                && hasNoPendingSavedFiles(taskId)) {
+                && !explicitFileBatch && hasNoPendingSavedFiles(taskId)) {
             return listByTask(taskId);
         }
         if (aiNamingEnabled(task)) {
             validateNamingReference(task);
         }
-        List<UploadedFile> files = uploadedFileService.listByTask(taskId).stream()
-                .filter(file -> file.getStatus() == UploadFileStatus.SAVED)
-                .toList();
+        List<UploadedFile> files = explicitFileBatch ? loadQueuedFiles(taskId, fileIds) : claimSavedFiles(taskId);
         if (files.isEmpty()) {
             List<WorkspaceDocument> existing = listByTask(taskId);
             if (!existing.isEmpty()) {
-                task.setStatus(TaskStatus.WAITING_REVIEW);
-                task.setUpdatedAt(LocalDateTime.now());
-                archiveTaskService.updateById(task);
+                refreshTaskStatusAfterSuccess(task);
+                return existing;
+            }
+            if (explicitFileBatch) {
                 return existing;
             }
             throw new BizException("任务下没有可处理的新增上传文件");
@@ -90,6 +96,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         task.setErrorMessage(null);
         task.setUpdatedAt(LocalDateTime.now());
         archiveTaskService.updateById(task);
+        markFilesStatus(files, UploadFileStatus.PROCESSING, null);
 
         try {
             List<WorkspaceDocument> documents = new ArrayList<>();
@@ -108,11 +115,10 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
                 markFilesProcessed(groupFiles);
             }
 
-            task.setStatus(TaskStatus.WAITING_REVIEW);
-            task.setUpdatedAt(LocalDateTime.now());
-            archiveTaskService.updateById(task);
+            refreshTaskStatusAfterSuccess(task);
             return documents;
         } catch (RuntimeException ex) {
+            markFilesStatus(files, UploadFileStatus.FAILED, limit(ex.getMessage(), 1000));
             task.setStatus(TaskStatus.FAILED);
             task.setErrorMessage(limit(ex.getMessage(), 1000));
             task.setUpdatedAt(LocalDateTime.now());
@@ -203,13 +209,61 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
                 .count() == 0;
     }
 
+    private List<UploadedFile> claimSavedFiles(Long taskId) {
+        List<Long> fileIds = uploadedFileService.listByTask(taskId).stream()
+                .filter(file -> file.getStatus() == UploadFileStatus.SAVED)
+                .map(UploadedFile::getId)
+                .toList();
+        if (fileIds.isEmpty()) {
+            return List.of();
+        }
+        LocalDateTime now = LocalDateTime.now();
+        uploadedFileService.lambdaUpdate()
+                .eq(UploadedFile::getTaskId, taskId)
+                .in(UploadedFile::getId, fileIds)
+                .eq(UploadedFile::getStatus, UploadFileStatus.SAVED)
+                .set(UploadedFile::getStatus, UploadFileStatus.QUEUED)
+                .set(UploadedFile::getUpdatedAt, now)
+                .update();
+        return loadQueuedFiles(taskId, fileIds);
+    }
+
+    private List<UploadedFile> loadQueuedFiles(Long taskId, List<Long> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            return List.of();
+        }
+        return uploadedFileService.listByIds(fileIds).stream()
+                .filter(file -> file.getTaskId().equals(taskId))
+                .filter(file -> file.getStatus() == UploadFileStatus.QUEUED)
+                .sorted(Comparator
+                        .comparing(UploadedFile::getUploadGroupNo, Comparator.nullsLast(String::compareTo))
+                        .thenComparing(UploadedFile::getGroupOrder, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(UploadedFile::getId))
+                .toList();
+    }
+
     private void markFilesProcessed(List<UploadedFile> files) {
+        markFilesStatus(files, UploadFileStatus.PROCESSED, null);
+    }
+
+    private void markFilesStatus(List<UploadedFile> files, UploadFileStatus status, String errorMessage) {
         LocalDateTime now = LocalDateTime.now();
         for (UploadedFile file : files) {
-            file.setStatus(UploadFileStatus.PROCESSED);
+            file.setStatus(status);
+            file.setErrorMessage(errorMessage);
             file.setUpdatedAt(now);
             uploadedFileService.updateById(file);
         }
+    }
+
+    private void refreshTaskStatusAfterSuccess(ArchiveTask task) {
+        long activeCount = uploadedFileService.lambdaQuery()
+                .eq(UploadedFile::getTaskId, task.getId())
+                .in(UploadedFile::getStatus, List.of(UploadFileStatus.QUEUED, UploadFileStatus.PROCESSING))
+                .count();
+        task.setStatus(activeCount > 0 ? TaskStatus.PROCESSING : TaskStatus.WAITING_REVIEW);
+        task.setUpdatedAt(LocalDateTime.now());
+        archiveTaskService.updateById(task);
     }
 
     private List<WorkspaceDocument> createWorkspaceDocuments(ArchiveTask task, List<UploadedFile> groupFiles) {
