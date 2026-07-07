@@ -12,6 +12,8 @@ import com.danganguan.archive.document.importing.enums.FinishedArchiveImportJobS
 import com.danganguan.archive.document.importing.mapper.FinishedArchiveImportJobMapper;
 import com.danganguan.archive.document.importing.service.FinishedArchiveImportService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
+import com.danganguan.archive.event.ArchiveRealtimeEvent;
+import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
 import com.danganguan.archive.file.storage.FileStorageService;
 import com.danganguan.archive.file.storage.StoredFile;
 import com.danganguan.archive.hall.entity.ArchiveHall;
@@ -58,6 +60,7 @@ public class FinishedArchiveImportServiceImpl
     private final FileStorageService fileStorageService;
     private final ArchiveStorageProperties properties;
     private final RabbitTemplate rabbitTemplate;
+    private final ArchiveRealtimeEventPublisher eventPublisher;
 
     @Override
     public FinishedArchiveImportResult importFinishedArchives(Long hallId, List<MultipartFile> files) {
@@ -99,6 +102,7 @@ public class FinishedArchiveImportServiceImpl
         job.setStatus(FinishedArchiveImportJobStatus.PENDING);
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
+        publishImportJob(job, "成品档案导入任务已进入后台队列");
 
         submitJob(job.getId());
         return job;
@@ -398,12 +402,14 @@ public class FinishedArchiveImportServiceImpl
         job.setStartedAt(LocalDateTime.now());
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
+        publishImportJob(job, "成品档案导入开始");
     }
 
     private void updateTotal(FinishedArchiveImportJob job, int total) {
         job.setTotalCount(total);
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
+        publishImportJob(job, "成品档案导入数量已统计");
     }
 
     private void complete(ImportProgress progress) {
@@ -415,6 +421,8 @@ public class FinishedArchiveImportServiceImpl
         job.setFinishedAt(LocalDateTime.now());
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
+        publishImportJob(job, "成品档案导入完成");
+        eventPublisher.publish(ArchiveRealtimeEvent.archiveDocumentsChanged(job.getHallId(), List.of(), "正式档案库已更新"));
     }
 
     private void fail(FinishedArchiveImportJob job, String message) {
@@ -423,6 +431,7 @@ public class FinishedArchiveImportServiceImpl
         job.setFinishedAt(LocalDateTime.now());
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
+        publishImportJob(job, "成品档案导入失败：" + limit(message, 200));
     }
 
     private void updateProgress(ImportProgress progress) {
@@ -432,6 +441,16 @@ public class FinishedArchiveImportServiceImpl
         job.setSkippedPreview(joinSkipped(progress.skippedFiles));
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
+        publishImportJob(job, "成品档案导入进度更新");
+    }
+
+    private void publishImportJob(FinishedArchiveImportJob job, String message) {
+        eventPublisher.publish(ArchiveRealtimeEvent.importJobChanged(
+                job.getId(),
+                job.getHallId(),
+                job.getStatus() == null ? null : job.getStatus().name(),
+                message
+        ));
     }
 
     private OutputFormat outputFormat(String ext) {

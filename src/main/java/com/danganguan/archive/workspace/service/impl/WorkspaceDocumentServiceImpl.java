@@ -13,6 +13,8 @@ import com.danganguan.archive.ai.dto.AiTaggingRequest;
 import com.danganguan.archive.ai.service.AiNamingService;
 import com.danganguan.archive.ai.service.AiTaggingService;
 import com.danganguan.archive.common.exception.BizException;
+import com.danganguan.archive.event.ArchiveRealtimeEvent;
+import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
 import com.danganguan.archive.document.process.DocumentProcessingService;
 import com.danganguan.archive.document.process.ProcessedFileResult;
 import com.danganguan.archive.file.entity.UploadedFile;
@@ -56,6 +58,7 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
     private final DocumentProcessingService documentProcessingService;
     private final DocumentAnalyzeService documentAnalyzeService;
     private final DefaultWorkspaceNamingService defaultWorkspaceNamingService;
+    private final ArchiveRealtimeEventPublisher eventPublisher;
 
     @Override
     public List<WorkspaceDocument> processTask(Long taskId) {
@@ -97,6 +100,9 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
         task.setUpdatedAt(LocalDateTime.now());
         archiveTaskService.updateById(task);
         markFilesStatus(files, UploadFileStatus.PROCESSING, null);
+        eventPublisher.sourceFilesChanged(task.getId(), task.getHallId(), files, UploadFileStatus.PROCESSING.name(), "原始文件开始处理");
+        eventPublisher.publish(ArchiveRealtimeEvent.taskChanged(
+                task.getId(), task.getHallId(), task.getStatus().name(), "上传任务开始处理"));
 
         try {
             List<WorkspaceDocument> documents = new ArrayList<>();
@@ -116,6 +122,12 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
             }
 
             refreshTaskStatusAfterSuccess(task);
+            eventPublisher.workspaceDocumentsChanged(task.getId(), task.getHallId(), documents,
+                    task.getStatus().name(), "工作区档案已生成");
+            eventPublisher.sourceFilesChanged(task.getId(), task.getHallId(), files,
+                    UploadFileStatus.PROCESSED.name(), "原始文件处理完成");
+            eventPublisher.publish(ArchiveRealtimeEvent.taskChanged(
+                    task.getId(), task.getHallId(), task.getStatus().name(), "上传任务处理完成"));
             return documents;
         } catch (RuntimeException ex) {
             markFilesStatus(files, UploadFileStatus.FAILED, limit(ex.getMessage(), 1000));
@@ -123,6 +135,10 @@ public class WorkspaceDocumentServiceImpl extends ServiceImpl<WorkspaceDocumentM
             task.setErrorMessage(limit(ex.getMessage(), 1000));
             task.setUpdatedAt(LocalDateTime.now());
             archiveTaskService.updateById(task);
+            eventPublisher.sourceFilesChanged(task.getId(), task.getHallId(), files,
+                    UploadFileStatus.FAILED.name(), "原始文件处理失败");
+            eventPublisher.publish(ArchiveRealtimeEvent.taskChanged(
+                    task.getId(), task.getHallId(), task.getStatus().name(), "上传任务处理失败"));
             throw ex;
         }
     }

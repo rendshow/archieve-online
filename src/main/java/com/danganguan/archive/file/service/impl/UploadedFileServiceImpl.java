@@ -2,6 +2,8 @@ package com.danganguan.archive.file.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.danganguan.archive.common.exception.BizException;
+import com.danganguan.archive.event.ArchiveRealtimeEvent;
+import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadFileStatus;
 import com.danganguan.archive.file.enums.UploadGroupType;
@@ -28,6 +30,7 @@ import java.util.UUID;
 public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, UploadedFile> implements UploadedFileService {
     private final ArchiveTaskService archiveTaskService;
     private final FileStorageService fileStorageService;
+    private final ArchiveRealtimeEventPublisher eventPublisher;
 
     @Override
     public List<UploadedFile> upload(Long taskId, List<MultipartFile> files) {
@@ -72,6 +75,9 @@ public class UploadedFileServiceImpl extends ServiceImpl<UploadedFileMapper, Upl
             task.setUpdatedAt(LocalDateTime.now());
             archiveTaskService.updateById(task);
         }
+        eventPublisher.sourceFilesChanged(task.getId(), task.getHallId(), savedFiles, "SAVED", "原始文件已上传");
+        eventPublisher.publish(ArchiveRealtimeEvent.taskChanged(
+                task.getId(), task.getHallId(), task.getStatus().name(), "上传任务文件发生变化"));
         return savedFiles;
     }
 

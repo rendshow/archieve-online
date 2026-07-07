@@ -2,6 +2,8 @@ package com.danganguan.archive.task.processing.impl;
 
 import com.danganguan.archive.common.config.ArchiveStorageProperties;
 import com.danganguan.archive.common.exception.BizException;
+import com.danganguan.archive.event.ArchiveRealtimeEvent;
+import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
 import com.danganguan.archive.file.entity.UploadedFile;
 import com.danganguan.archive.file.enums.UploadFileStatus;
 import com.danganguan.archive.file.service.UploadedFileService;
@@ -29,6 +31,7 @@ public class RabbitTaskProcessingSubmitter implements TaskProcessingSubmitter {
     private final ArchiveTaskService archiveTaskService;
     private final WorkspaceDocumentService workspaceDocumentService;
     private final UploadedFileService uploadedFileService;
+    private final ArchiveRealtimeEventPublisher eventPublisher;
 
     @Override
     public List<WorkspaceDocument> submit(Long taskId) {
@@ -72,6 +75,10 @@ public class RabbitTaskProcessingSubmitter implements TaskProcessingSubmitter {
 
         ArchiveStorageProperties.Rabbitmq rabbitmq = properties.getProcessing().getRabbitmq();
         rabbitTemplate.convertAndSend(rabbitmq.getExchange(), rabbitmq.getRoutingKey(), new TaskProcessMessage(taskId, queuedFileIds));
+        eventPublisher.publish(ArchiveRealtimeEvent.sourceFilesChanged(
+                taskId, task.getHallId(), queuedFileIds, UploadFileStatus.QUEUED.name(), "新增原始文件已进入处理队列"));
+        eventPublisher.publish(ArchiveRealtimeEvent.taskChanged(
+                taskId, task.getHallId(), task.getStatus().name(), "上传任务已提交到后台队列"));
         return workspaceDocumentService.listByTask(taskId);
     }
 
