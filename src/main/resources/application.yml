@@ -1,5 +1,8 @@
 server:
   port: 8080
+  tomcat:
+    connection-timeout: 10m
+    max-swallow-size: -1
 
 spring:
   profiles:
@@ -18,8 +21,9 @@ spring:
       data-locations: classpath:db/data.sql
   servlet:
     multipart:
-      max-file-size: 3GB
-      max-request-size: 3GB
+      max-file-size: 10GB
+      max-request-size: 10GB
+      file-size-threshold: 16MB
 
 mybatis-plus:
   configuration:
