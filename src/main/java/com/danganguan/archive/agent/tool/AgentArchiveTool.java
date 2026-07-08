@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 @Component
 @RequiredArgsConstructor
 public class AgentArchiveTool {
-    private static final int SEARCH_LIMIT = 20;
+    private static final int SEARCH_LIMIT = 10;
     private static final int SCOPE_SCAN_LIMIT = 5000;
     private static final Pattern PERSON_NAME_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})$");
 

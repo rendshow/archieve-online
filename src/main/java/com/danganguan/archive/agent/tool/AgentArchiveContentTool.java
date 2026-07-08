@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,17 +46,14 @@ public class AgentArchiveContentTool {
         if (context != null && context.selectedDocumentIds() != null && !context.selectedDocumentIds().isEmpty()) {
             wrapper.in(ArchiveDocument::getId, context.selectedDocumentIds());
         } else if (!keywords.isEmpty()) {
+            List<String> searchKeywords = contentSearchKeywords(keywords);
             wrapper.and(inner -> {
-                for (int i = 0; i < keywords.size(); i++) {
-                    String keyword = keywords.get(i);
+                for (int i = 0; i < searchKeywords.size(); i++) {
+                    String keyword = searchKeywords.get(i);
                     if (i > 0) {
                         inner.or();
                     }
-                    inner.like(ArchiveDocument::getTitle, keyword)
-                            .or()
-                            .like(ArchiveDocument::getFolderPath, keyword)
-                            .or()
-                            .like(ArchiveDocument::getAiSummary, keyword)
+                    inner.like(ArchiveDocument::getAiSummary, keyword)
                             .or()
                             .like(ArchiveDocument::getOcrText, keyword);
                 }
@@ -104,7 +100,7 @@ public class AgentArchiveContentTool {
                 document.getFolderPath(),
                 summary,
                 snippet,
-                keywords.isEmpty() ? "按当前页面范围选取" : "按问题关键词匹配标题、摘要或 OCR"
+                keywords.isEmpty() ? "按当前页面范围选取" : "按问题关键词匹配摘要或 OCR"
         );
     }
 
@@ -125,12 +121,20 @@ public class AgentArchiveContentTool {
 
     private List<String> extractKeywords(String message) {
         String text = message == null ? "" : message.trim();
+        Set<String> keywords = new LinkedHashSet<>();
+        Matcher surnameMatcher = Pattern.compile("姓([\\u4e00-\\u9fa5]{1,4})").matcher(text);
+        while (surnameMatcher.find()) {
+            keywords.add(surnameMatcher.group(1));
+        }
+        if (text.contains("导师")) {
+            keywords.add("导师");
+        }
         String cleaned = text
                 .replaceAll("(这份|这些|当前|档案|文件|材料|内容|讲了什么|主要是什么|有没有|是否|提到|帮我|看一下|概括一下|总结一下)", " ")
+                .replaceAll("(有哪些|哪些|学生|导师姓|姓|导师)", " ")
                 .replaceAll("(的|里|中|下|吗|呢|一下)", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
-        Set<String> keywords = new LinkedHashSet<>();
         Matcher matcher = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._•\\-]{2,}|[\\u4e00-\\u9fa5]{2,8}").matcher(cleaned);
         while (matcher.find()) {
             String token = matcher.group();
@@ -138,7 +142,7 @@ public class AgentArchiveContentTool {
                 keywords.add(token);
             }
         }
-        for (String keyword : List.of("成绩", "学籍", "学位", "休学", "转专业", "处分", "奖励", "毕业", "证明")) {
+        for (String keyword : List.of("成绩", "学籍", "学位", "导师", "休学", "转专业", "处分", "奖励", "毕业", "证明")) {
             if (text.contains(keyword)) {
                 keywords.add(keyword);
             }
@@ -147,7 +151,15 @@ public class AgentArchiveContentTool {
     }
 
     private boolean isStopWord(String token) {
-        return List.of("这个", "当前", "这些", "这份", "是否", "有没有", "主要", "什么", "里面").contains(token);
+        return List.of("这个", "当前", "这些", "这份", "是否", "有没有", "主要", "什么", "里面",
+                "有哪些", "哪些", "学生", "档案", "文件", "材料").contains(token);
+    }
+
+    private List<String> contentSearchKeywords(List<String> keywords) {
+        List<String> specificKeywords = keywords.stream()
+                .filter(keyword -> !List.of("导师", "学生", "档案", "文件", "材料", "内容").contains(keyword))
+                .toList();
+        return specificKeywords.isEmpty() ? keywords : specificKeywords;
     }
 
     private List<AgentDocumentReference> toReferences(List<ArchiveDocument> documents) {

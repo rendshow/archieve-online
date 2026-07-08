@@ -11,15 +11,17 @@ public class AgentIntentClassifier {
         if (text.isBlank()) {
             return AgentIntent.UNKNOWN;
         }
-        if (containsAny(text, "这份", "这些", "当前档案", "当前文件", "选中", "内容", "讲了什么", "主要是什么",
-                "提到", "有没有提", "是否提", "休学", "转专业", "处分", "奖励", "毕业去向", "概括一下")) {
-            return AgentIntent.DISCUSS_ARCHIVE_INFO;
-        }
-        if (containsAny(text, "总结", "汇总", "概览", "统计", "多少份", "多少个")) {
+        if (containsAny(text, "总结", "汇总", "概览", "统计", "多少份", "多少个", "多少文件", "多少个文件",
+                "文件数", "文件数量", "档案数", "档案数量")) {
             return AgentIntent.SUMMARIZE_SCOPE;
         }
         if (containsAny(text, "缺", "缺少", "缺失", "少了", "完整", "齐不齐", "是否齐全", "核验", "检查")) {
             return AgentIntent.CHECK_MISSING_MATERIALS;
+        }
+        if (containsAny(text, "这份", "这些", "当前档案", "当前文件", "选中", "内容", "讲了什么", "主要是什么",
+                "提到", "有没有提", "是否提", "休学", "转专业", "处分", "奖励", "毕业去向", "概括一下",
+                "导师", "导师姓", "学生导师", "姓")) {
+            return AgentIntent.DISCUSS_ARCHIVE_INFO;
         }
         if (containsAny(text, "查", "找", "搜索", "有没有", "在哪", "成绩单", "学籍", "学位", "材料", "档案")) {
             return AgentIntent.SEARCH_ARCHIVE;
