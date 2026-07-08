@@ -6,6 +6,8 @@ import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.importing.FinishedArchiveImportMessage;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkUploadResult;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkedCompleteRequest;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveImportResult;
 import com.danganguan.archive.document.importing.entity.FinishedArchiveImportJob;
 import com.danganguan.archive.document.importing.enums.FinishedArchiveImportJobStatus;
@@ -77,24 +79,7 @@ public class FinishedArchiveImportServiceImpl
     @Override
     public FinishedArchiveImportJob createImportJob(Long hallId, List<MultipartFile> files) {
         ArchiveHall hall = validateRequest(hallId, files);
-        String batchNo = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
-                + "-" + UUID.randomUUID().toString().substring(0, 8);
-        LocalDateTime now = LocalDateTime.now();
-
-        FinishedArchiveImportJob job = new FinishedArchiveImportJob();
-        job.setHallId(hall.getId());
-        job.setBatchNo(batchNo);
-        job.setStatus(FinishedArchiveImportJobStatus.STAGING);
-        job.setTotalCount(0);
-        job.setImportedCount(0);
-        job.setSkippedCount(0);
-        job.setSkippedPreview("");
-        job.setErrorMessage(null);
-        job.setStartedAt(null);
-        job.setFinishedAt(null);
-        job.setCreatedAt(now);
-        job.setUpdatedAt(now);
-        save(job);
+        FinishedArchiveImportJob job = createStagingJob(hall);
 
         Path sourceRoot = sourceRoot(job.getId());
         stageFiles(files, sourceRoot);
@@ -104,6 +89,84 @@ public class FinishedArchiveImportServiceImpl
         updateById(job);
         publishImportJob(job, "成品档案导入任务已进入后台队列");
 
+        submitJob(job.getId());
+        return job;
+    }
+
+    @Override
+    public FinishedArchiveImportJob createChunkedImportJob(Long hallId) {
+        ArchiveHall hall = validateHall(hallId);
+        FinishedArchiveImportJob job = createStagingJob(hall);
+        Path sourceRoot = sourceRoot(job.getId());
+        try {
+            Files.createDirectories(sourceRoot);
+            Files.createDirectories(chunkRoot(job.getId()));
+        } catch (IOException ex) {
+            throw new BizException("创建分片上传暂存目录失败：" + ex.getMessage());
+        }
+        job.setSourceRootPath(storageRoot().relativize(sourceRoot).toString().replace('\\', '/'));
+        job.setUpdatedAt(LocalDateTime.now());
+        updateById(job);
+        publishImportJob(job, "成品档案分片上传任务已创建");
+        return job;
+    }
+
+    @Override
+    public FinishedArchiveChunkUploadResult uploadChunk(Long jobId, Integer fileIndex, Integer chunkIndex,
+                                                        Integer totalChunks, MultipartFile chunk) {
+        FinishedArchiveImportJob job = getImportJob(jobId);
+        if (job.getStatus() != FinishedArchiveImportJobStatus.STAGING) {
+            throw new BizException("当前导入任务不允许继续上传分片");
+        }
+        validateChunkRequest(fileIndex, chunkIndex, totalChunks, chunk);
+        Path fileChunkRoot = chunkRoot(jobId).resolve(String.valueOf(fileIndex)).normalize();
+        if (!fileChunkRoot.startsWith(chunkRoot(jobId))) {
+            throw new BizException("非法分片路径");
+        }
+        boolean completed;
+        try {
+            Files.createDirectories(fileChunkRoot);
+            Path target = fileChunkRoot.resolve(chunkIndex + ".part").normalize();
+            if (!target.startsWith(fileChunkRoot)) {
+                throw new BizException("非法分片路径");
+            }
+            try (InputStream input = chunk.getInputStream()) {
+                Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+            completed = uploadedChunkCount(fileChunkRoot) >= totalChunks;
+        } catch (IOException ex) {
+            throw new BizException("保存上传分片失败：" + ex.getMessage());
+        }
+        job.setUpdatedAt(LocalDateTime.now());
+        updateById(job);
+        return new FinishedArchiveChunkUploadResult(jobId, fileIndex, chunkIndex, totalChunks, completed);
+    }
+
+    @Override
+    public FinishedArchiveImportJob completeChunkedImportJob(Long jobId, FinishedArchiveChunkedCompleteRequest request) {
+        FinishedArchiveImportJob job = getImportJob(jobId);
+        if (job.getStatus() != FinishedArchiveImportJobStatus.STAGING) {
+            throw new BizException("当前导入任务不能完成分片上传");
+        }
+        if (request == null || request.files() == null || request.files().isEmpty()) {
+            throw new BizException("分片上传文件清单不能为空");
+        }
+        Path sourceRoot = sourceRoot(jobId);
+        Path chunks = chunkRoot(jobId);
+        try {
+            Files.createDirectories(sourceRoot);
+            for (FinishedArchiveChunkedCompleteRequest.FileManifest file : request.files()) {
+                mergeChunkedFile(file, sourceRoot, chunks);
+            }
+            deleteDirectoryIfExists(chunks);
+        } catch (IOException ex) {
+            throw new BizException("合并上传分片失败：" + ex.getMessage());
+        }
+        job.setSourceRootPath(storageRoot().relativize(sourceRoot).toString().replace('\\', '/'));
+        job.setStatus(FinishedArchiveImportJobStatus.PENDING);
+        job.setUpdatedAt(LocalDateTime.now());
+        updateById(job);
+        publishImportJob(job, "成品档案分片上传已完成，导入任务已进入后台队列");
         submitJob(job.getId());
         return job;
     }
@@ -157,6 +220,14 @@ public class FinishedArchiveImportServiceImpl
     }
 
     private ArchiveHall validateRequest(Long hallId, List<MultipartFile> files) {
+        ArchiveHall hall = validateHall(hallId);
+        if (files == null || files.isEmpty()) {
+            throw new BizException("请上传文件夹文件或压缩包");
+        }
+        return hall;
+    }
+
+    private ArchiveHall validateHall(Long hallId) {
         if (hallId == null) {
             throw new BizException("馆 ID 不能为空");
         }
@@ -164,10 +235,110 @@ public class FinishedArchiveImportServiceImpl
         if (hall == null) {
             throw new BizException("档案馆不存在");
         }
-        if (files == null || files.isEmpty()) {
-            throw new BizException("请上传文件夹文件或压缩包");
-        }
         return hall;
+    }
+
+    private FinishedArchiveImportJob createStagingJob(ArchiveHall hall) {
+        String batchNo = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS"))
+                + "-" + UUID.randomUUID().toString().substring(0, 8);
+        LocalDateTime now = LocalDateTime.now();
+
+        FinishedArchiveImportJob job = new FinishedArchiveImportJob();
+        job.setHallId(hall.getId());
+        job.setBatchNo(batchNo);
+        job.setStatus(FinishedArchiveImportJobStatus.STAGING);
+        job.setTotalCount(0);
+        job.setImportedCount(0);
+        job.setSkippedCount(0);
+        job.setSkippedPreview("");
+        job.setErrorMessage(null);
+        job.setStartedAt(null);
+        job.setFinishedAt(null);
+        job.setCreatedAt(now);
+        job.setUpdatedAt(now);
+        save(job);
+        return job;
+    }
+
+    private void validateChunkRequest(Integer fileIndex, Integer chunkIndex, Integer totalChunks, MultipartFile chunk) {
+        if (fileIndex == null || fileIndex < 0) {
+            throw new BizException("文件索引不合法");
+        }
+        if (chunkIndex == null || chunkIndex < 0) {
+            throw new BizException("分片索引不合法");
+        }
+        if (totalChunks == null || totalChunks < 1) {
+            throw new BizException("分片总数不合法");
+        }
+        if (chunkIndex >= totalChunks) {
+            throw new BizException("分片索引不能大于等于分片总数");
+        }
+        if (chunk == null || chunk.isEmpty()) {
+            throw new BizException("上传分片不能为空");
+        }
+    }
+
+    private int uploadedChunkCount(Path fileChunkRoot) throws IOException {
+        if (!Files.exists(fileChunkRoot)) {
+            return 0;
+        }
+        try (var walk = Files.list(fileChunkRoot)) {
+            return (int) walk.filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName().toString().endsWith(".part"))
+                    .count();
+        }
+    }
+
+    private void mergeChunkedFile(FinishedArchiveChunkedCompleteRequest.FileManifest file,
+                                  Path sourceRoot, Path chunks) throws IOException {
+        if (file == null || file.fileIndex() == null || file.fileIndex() < 0) {
+            throw new BizException("文件清单中的文件索引不合法");
+        }
+        if (file.totalChunks() == null || file.totalChunks() < 1) {
+            throw new BizException("文件清单中的分片总数不合法");
+        }
+        String relativePath = normalizeRelativePath(file.relativePath());
+        if (relativePath.isBlank()) {
+            throw new BizException("文件清单中的相对路径不能为空");
+        }
+        Path fileChunkRoot = chunks.resolve(String.valueOf(file.fileIndex())).normalize();
+        if (!fileChunkRoot.startsWith(chunks) || !Files.exists(fileChunkRoot)) {
+            throw new BizException("文件缺少上传分片：" + relativePath);
+        }
+        List<Path> chunkFiles = new ArrayList<>();
+        for (int i = 0; i < file.totalChunks(); i++) {
+            Path chunkFile = fileChunkRoot.resolve(i + ".part").normalize();
+            if (!chunkFile.startsWith(fileChunkRoot) || !Files.isRegularFile(chunkFile)) {
+                throw new BizException("文件缺少上传分片：" + relativePath + " #" + i);
+            }
+            chunkFiles.add(chunkFile);
+        }
+
+        Path target = sourceRoot.resolve(relativePath).normalize();
+        if (!target.startsWith(sourceRoot)) {
+            throw new BizException("非法上传路径：" + relativePath);
+        }
+        Files.createDirectories(target.getParent());
+        try (var output = Files.newOutputStream(target)) {
+            for (Path chunkFile : chunkFiles) {
+                Files.copy(chunkFile, output);
+            }
+        }
+        if (file.fileSize() != null && file.fileSize() >= 0 && Files.size(target) != file.fileSize()) {
+            Files.deleteIfExists(target);
+            throw new BizException("文件合并后大小不一致：" + relativePath);
+        }
+    }
+
+    private void deleteDirectoryIfExists(Path directory) throws IOException {
+        if (!Files.exists(directory)) {
+            return;
+        }
+        try (var walk = Files.walk(directory)) {
+            for (Path path : walk.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
     }
 
     private void submitJob(Long jobId) {
@@ -528,6 +699,10 @@ public class FinishedArchiveImportServiceImpl
 
     private Path sourceRoot(Long jobId) {
         return storageRoot().resolve("import-jobs").resolve(String.valueOf(jobId)).resolve("source").normalize();
+    }
+
+    private Path chunkRoot(Long jobId) {
+        return storageRoot().resolve("import-jobs").resolve(String.valueOf(jobId)).resolve("chunks").normalize();
     }
 
     private List<String> skippedPreview(String skippedPreview) {

@@ -1,6 +1,8 @@
 package com.danganguan.archive.document.importing.controller;
 
 import com.danganguan.archive.common.response.Result;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkUploadResult;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkedCompleteRequest;
 import com.danganguan.archive.document.importing.entity.FinishedArchiveImportJob;
 import com.danganguan.archive.document.importing.service.FinishedArchiveImportService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -9,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -34,6 +37,29 @@ public class FinishedArchiveImportController {
     public Result<FinishedArchiveImportJob> createImportJob(@RequestParam Long hallId,
                                                             @RequestPart("files") List<MultipartFile> files) {
         return Result.ok(finishedArchiveImportService.createImportJob(hallId, files));
+    }
+
+    @Operation(summary = "创建成品档案分片导入任务", description = "创建分片上传会话，随后逐片上传文件，最后调用完成接口合并并进入后台导入队列")
+    @PostMapping("/api/archive-imports/finished/chunked/jobs")
+    public Result<FinishedArchiveImportJob> createChunkedImportJob(@RequestParam Long hallId) {
+        return Result.ok(finishedArchiveImportService.createChunkedImportJob(hallId));
+    }
+
+    @Operation(summary = "上传成品档案文件分片", description = "按文件索引和分片索引上传一个文件分片，支持前端失败后重传同一分片")
+    @PostMapping("/api/archive-imports/finished/chunked/jobs/{jobId}/chunks")
+    public Result<FinishedArchiveChunkUploadResult> uploadChunk(@PathVariable Long jobId,
+                                                                @RequestParam Integer fileIndex,
+                                                                @RequestParam Integer chunkIndex,
+                                                                @RequestParam Integer totalChunks,
+                                                                @RequestPart("chunk") MultipartFile chunk) {
+        return Result.ok(finishedArchiveImportService.uploadChunk(jobId, fileIndex, chunkIndex, totalChunks, chunk));
+    }
+
+    @Operation(summary = "完成成品档案分片导入任务", description = "提交文件清单，后端校验并合并所有分片，然后把导入任务投递到后台队列")
+    @PostMapping("/api/archive-imports/finished/chunked/jobs/{jobId}/complete")
+    public Result<FinishedArchiveImportJob> completeChunkedImportJob(@PathVariable Long jobId,
+                                                                     @RequestBody FinishedArchiveChunkedCompleteRequest request) {
+        return Result.ok(finishedArchiveImportService.completeChunkedImportJob(jobId, request));
     }
 
     @Operation(summary = "查询成品档案导入任务", description = "查询成品档案导入任务状态、总数、已导入数量、跳过数量和错误信息")
