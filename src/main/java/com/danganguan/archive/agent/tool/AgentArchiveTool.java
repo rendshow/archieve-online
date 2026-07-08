@@ -155,6 +155,7 @@ public class AgentArchiveTool {
         }
         String cleaned = text
                 .replaceAll("(查一下|找一下|查询|查找|搜索|有没有|请问|帮我|一下|当前|目录|文件夹|全校|全馆|所有|全部)", " ")
+                .replaceAll("(如果没有|如果没找到|没找到|告诉我|下一步|怎么查|该怎么|怎么办|可以怎么|如何|如果|没有|就)", " ")
                 .replaceAll("(成绩单|成绩|学籍|学位|档案|材料|的|里|中|下|吗|呢)", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
@@ -169,7 +170,8 @@ public class AgentArchiveTool {
     }
 
     private boolean isStopWord(String token) {
-        return List.of("查一下", "找一下", "有没有", "当前", "目录", "文件夹", "全校", "全馆", "总结", "汇总", "哪些", "这个")
+        return List.of("查一下", "找一下", "有没有", "当前", "目录", "文件夹", "全校", "全馆", "总结", "汇总",
+                        "哪些", "这个", "如果", "没有", "告诉我", "下一步", "怎么查", "怎么办")
                 .contains(token);
     }
 

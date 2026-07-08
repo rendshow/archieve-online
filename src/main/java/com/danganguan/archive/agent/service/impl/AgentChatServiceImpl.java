@@ -1,6 +1,5 @@
 package com.danganguan.archive.agent.service.impl;
 
-import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.danganguan.archive.agent.context.AgentContextResolver;
 import com.danganguan.archive.agent.dto.AgentChatRequest;
 import com.danganguan.archive.agent.dto.AgentChatResponse;
@@ -11,6 +10,7 @@ import com.danganguan.archive.agent.entity.AgentSession;
 import com.danganguan.archive.agent.enums.AgentIntent;
 import com.danganguan.archive.agent.enums.AgentScopeType;
 import com.danganguan.archive.agent.intent.AgentIntentClassifier;
+import com.danganguan.archive.agent.llm.AgentAnswerLlmService;
 import com.danganguan.archive.agent.mapper.AgentMessageMapper;
 import com.danganguan.archive.agent.mapper.AgentSessionMapper;
 import com.danganguan.archive.agent.service.AgentChatService;
@@ -35,6 +35,7 @@ public class AgentChatServiceImpl implements AgentChatService {
     private final AgentIntentClassifier intentClassifier;
     private final AgentContextResolver contextResolver;
     private final AgentArchiveTool archiveTool;
+    private final AgentAnswerLlmService answerLlmService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -99,7 +100,9 @@ public class AgentChatServiceImpl implements AgentChatService {
             answer.append("找到 ").append(result.total()).append(" 条候选档案，前几条包括：");
             appendReferences(answer, result.references(), 8);
         }
-        return new AgentChatResponse(sessionId, AgentIntent.SEARCH_ARCHIVE, scope, answer.toString(), result.references());
+        String finalAnswer = answerLlmService.enhance(message, AgentIntent.SEARCH_ARCHIVE, scope,
+                answer.toString(), result.references(), result);
+        return new AgentChatResponse(sessionId, AgentIntent.SEARCH_ARCHIVE, scope, finalAnswer, result.references());
     }
 
     private AgentChatResponse summarize(Long sessionId, AgentResolvedScope scope) {
@@ -123,7 +126,9 @@ public class AgentChatServiceImpl implements AgentChatService {
             answer.append("样例档案：");
             appendReferences(answer, summary.sampleReferences(), 5);
         }
-        return new AgentChatResponse(sessionId, AgentIntent.SUMMARIZE_SCOPE, scope, answer.toString(), summary.sampleReferences());
+        String finalAnswer = answerLlmService.enhance("总结当前范围", AgentIntent.SUMMARIZE_SCOPE, scope,
+                answer.toString(), summary.sampleReferences(), summary);
+        return new AgentChatResponse(sessionId, AgentIntent.SUMMARIZE_SCOPE, scope, finalAnswer, summary.sampleReferences());
     }
 
     private AgentChatResponse checkMissingMaterials(Long sessionId, AgentResolvedScope scope) {
@@ -133,7 +138,9 @@ public class AgentChatServiceImpl implements AgentChatService {
         answer.append("我按").append(scopeText(scope)).append("做了轻量缺件核验。");
         if (result.personCount() == 0) {
             answer.append("当前范围内还没有足够的学生姓名线索，无法判断缺件情况。");
-            return new AgentChatResponse(sessionId, AgentIntent.CHECK_MISSING_MATERIALS, scope, answer.toString(), List.of());
+            String finalAnswer = answerLlmService.enhance("核验当前范围缺件情况", AgentIntent.CHECK_MISSING_MATERIALS, scope,
+                    answer.toString(), List.of(), result);
+            return new AgentChatResponse(sessionId, AgentIntent.CHECK_MISSING_MATERIALS, scope, finalAnswer, List.of());
         }
         answer.append("可识别约 ").append(result.personCount()).append(" 名学生，其中 ")
                 .append(result.missingPersonCount()).append(" 名存在疑似缺件风险。");
@@ -156,7 +163,10 @@ public class AgentChatServiceImpl implements AgentChatService {
             }
         }
         answer.append("以上仅根据当前系统可见文件名、标签摘要和 OCR 文本判断，建议人工复核。");
-        return new AgentChatResponse(sessionId, AgentIntent.CHECK_MISSING_MATERIALS, scope, answer.toString(), references.stream().limit(20).toList());
+        List<AgentDocumentReference> limitedReferences = references.stream().limit(20).toList();
+        String finalAnswer = answerLlmService.enhance("核验当前范围缺件情况", AgentIntent.CHECK_MISSING_MATERIALS, scope,
+                answer.toString(), limitedReferences, result);
+        return new AgentChatResponse(sessionId, AgentIntent.CHECK_MISSING_MATERIALS, scope, finalAnswer, limitedReferences);
     }
 
     private AgentChatResponse outOfScope(Long sessionId, AgentResolvedScope scope) {
