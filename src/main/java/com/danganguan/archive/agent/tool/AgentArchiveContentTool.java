@@ -56,6 +56,10 @@ public class AgentArchiveContentTool {
                     inner.like(ArchiveDocument::getAiSummary, keyword)
                             .or()
                             .like(ArchiveDocument::getOcrText, keyword);
+                    if (isArchiveTitleKeyword(keyword)) {
+                        inner.or()
+                                .like(ArchiveDocument::getTitle, keyword);
+                    }
                 }
             });
         }
@@ -131,6 +135,7 @@ public class AgentArchiveContentTool {
         }
         String cleaned = text
                 .replaceAll("(这份|这些|当前|档案|文件|材料|内容|讲了什么|主要是什么|有没有|是否|提到|帮我|看一下|概括一下|总结一下)", " ")
+                .replaceAll("(分析一下|分析|记录了哪些信息|记录了哪些|哪些信息|都记录了|都记录|这个文档)", " ")
                 .replaceAll("(有哪些|哪些|学生|导师姓|姓|导师)", " ")
                 .replaceAll("(的|里|中|下|吗|呢|一下)", " ")
                 .replaceAll("\\s+", " ")
@@ -160,6 +165,13 @@ public class AgentArchiveContentTool {
                 .filter(keyword -> !List.of("导师", "学生", "档案", "文件", "材料", "内容").contains(keyword))
                 .toList();
         return specificKeywords.isEmpty() ? keywords : specificKeywords;
+    }
+
+    private boolean isArchiveTitleKeyword(String keyword) {
+        return keyword != null
+                && keyword.length() >= 6
+                && Pattern.compile("\\d").matcher(keyword).find()
+                && Pattern.compile("[A-Za-z._•\\-]").matcher(keyword).find();
     }
 
     private List<AgentDocumentReference> toReferences(List<ArchiveDocument> documents) {
