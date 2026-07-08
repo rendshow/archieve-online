@@ -21,6 +21,7 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
     @Override
     public void run(ApplicationArguments args) throws Exception {
         ensureFinishedArchiveImportJobTable();
+        ensureAgentTables();
         if (!tableExists("archive_document")) {
             return;
         }
@@ -59,6 +60,37 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
                   INDEX idx_finished_archive_import_job_created_at (created_at)
                 )
                 """);
+    }
+
+    private void ensureAgentTables() throws SQLException {
+        if (!tableExists("agent_session")) {
+            jdbcTemplate.execute("""
+                    CREATE TABLE agent_session (
+                      id BIGINT PRIMARY KEY,
+                      title VARCHAR(255) NOT NULL,
+                      created_by BIGINT,
+                      created_at DATETIME NOT NULL,
+                      updated_at DATETIME NOT NULL,
+                      INDEX idx_agent_session_updated_at (updated_at)
+                    )
+                    """);
+        }
+        if (!tableExists("agent_message")) {
+            jdbcTemplate.execute("""
+                    CREATE TABLE agent_message (
+                      id BIGINT PRIMARY KEY,
+                      session_id BIGINT NOT NULL,
+                      role VARCHAR(32) NOT NULL,
+                      content TEXT NOT NULL,
+                      intent VARCHAR(64),
+                      client_context_json JSON,
+                      resolved_scope_json JSON,
+                      created_at DATETIME NOT NULL,
+                      INDEX idx_agent_message_session_id (session_id),
+                      INDEX idx_agent_message_created_at (created_at)
+                    )
+                    """);
+        }
     }
 
     private boolean tableExists(String tableName) throws SQLException {

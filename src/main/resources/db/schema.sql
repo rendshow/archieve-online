@@ -164,3 +164,25 @@ CREATE TABLE IF NOT EXISTS finished_archive_import_job (
   INDEX idx_finished_archive_import_job_status (status),
   INDEX idx_finished_archive_import_job_created_at (created_at)
 );
+
+CREATE TABLE IF NOT EXISTS agent_session (
+  id BIGINT PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  created_by BIGINT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  INDEX idx_agent_session_updated_at (updated_at)
+);
+
+CREATE TABLE IF NOT EXISTS agent_message (
+  id BIGINT PRIMARY KEY,
+  session_id BIGINT NOT NULL,
+  role VARCHAR(32) NOT NULL,
+  content TEXT NOT NULL,
+  intent VARCHAR(64),
+  client_context_json JSON,
+  resolved_scope_json JSON,
+  created_at DATETIME NOT NULL,
+  INDEX idx_agent_message_session_id (session_id),
+  INDEX idx_agent_message_created_at (created_at)
+);
