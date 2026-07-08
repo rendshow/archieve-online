@@ -3,6 +3,7 @@ package com.danganguan.archive.agent.service.impl;
 import com.danganguan.archive.agent.context.AgentContextResolver;
 import com.danganguan.archive.agent.dto.AgentChatRequest;
 import com.danganguan.archive.agent.dto.AgentChatResponse;
+import com.danganguan.archive.agent.dto.AgentClientContext;
 import com.danganguan.archive.agent.dto.AgentDocumentReference;
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
 import com.danganguan.archive.agent.entity.AgentMessage;
@@ -14,6 +15,7 @@ import com.danganguan.archive.agent.llm.AgentAnswerLlmService;
 import com.danganguan.archive.agent.mapper.AgentMessageMapper;
 import com.danganguan.archive.agent.mapper.AgentSessionMapper;
 import com.danganguan.archive.agent.service.AgentChatService;
+import com.danganguan.archive.agent.tool.AgentArchiveContentTool;
 import com.danganguan.archive.agent.tool.AgentArchiveTool;
 import com.danganguan.archive.common.exception.BizException;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -21,11 +23,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -35,6 +41,7 @@ public class AgentChatServiceImpl implements AgentChatService {
     private final AgentIntentClassifier intentClassifier;
     private final AgentContextResolver contextResolver;
     private final AgentArchiveTool archiveTool;
+    private final AgentArchiveContentTool contentTool;
     private final AgentAnswerLlmService answerLlmService;
     private final ObjectMapper objectMapper;
 
@@ -58,8 +65,74 @@ public class AgentChatServiceImpl implements AgentChatService {
                 case SEARCH_ARCHIVE -> search(session.getId(), request.message(), scope);
                 case SUMMARIZE_SCOPE -> summarize(session.getId(), scope);
                 case CHECK_MISSING_MATERIALS -> checkMissingMaterials(session.getId(), scope);
+                case DISCUSS_ARCHIVE_INFO -> discussArchiveInfo(session.getId(), request.message(), scope, request.clientContext());
                 default -> unknown(session.getId(), scope);
             };
+        }
+
+        saveMessage(session.getId(), "USER", request.message(), intent, request.clientContext(), scope);
+        saveMessage(session.getId(), "ASSISTANT", response.answer(), response.intent(), request.clientContext(), response.scope());
+        touchSession(session, request.message());
+        return response;
+    }
+
+    @Override
+    public SseEmitter stream(AgentChatRequest request) {
+        SseEmitter emitter = new SseEmitter(120_000L);
+        CompletableFuture.runAsync(() -> {
+            try {
+                AgentChatResponse response = chatStreamInternal(request, emitter);
+                sendEvent(emitter, "done", response);
+                emitter.complete();
+            } catch (Exception ex) {
+                try {
+                    sendEvent(emitter, "error", "Agent 流式回答失败：" + ex.getMessage());
+                } catch (IOException ignored) {
+                }
+                emitter.completeWithError(ex);
+            }
+        });
+        return emitter;
+    }
+
+    private AgentChatResponse chatStreamInternal(AgentChatRequest request, SseEmitter emitter) throws IOException {
+        if (request == null || request.message() == null || request.message().isBlank()) {
+            throw new BizException("消息不能为空");
+        }
+        AgentSession session = getOrCreateSession(request);
+        AgentIntent intent = intentClassifier.classify(request.message());
+        AgentResolvedScope scope = contextResolver.resolve(intent, request.clientContext());
+        sendEvent(emitter, "meta", Map.of(
+                "sessionId", session.getId(),
+                "intent", intent.name(),
+                "scope", scope
+        ));
+
+        AgentChatResponse response;
+        if (isOutOfPageScope(request.message(), scope)) {
+            response = outOfScope(session.getId(), scope);
+            sendEvent(emitter, "delta", response.answer());
+        } else if (needsScope(intent, scope) || needsContentScope(intent, scope, request.clientContext())) {
+            response = needScope(session.getId(), intent, scope);
+            sendEvent(emitter, "delta", response.answer());
+        } else {
+            Consumer<String> chunkConsumer = chunk -> {
+                try {
+                    sendEvent(emitter, "delta", chunk);
+                } catch (IOException ex) {
+                    throw new IllegalStateException(ex);
+                }
+            };
+            response = switch (intent) {
+                case SEARCH_ARCHIVE -> searchStream(session.getId(), request.message(), scope, chunkConsumer);
+                case SUMMARIZE_SCOPE -> summarizeStream(session.getId(), scope, chunkConsumer);
+                case CHECK_MISSING_MATERIALS -> checkMissingMaterialsStream(session.getId(), scope, chunkConsumer);
+                case DISCUSS_ARCHIVE_INFO -> discussArchiveInfoStream(session.getId(), request.message(), scope, request.clientContext(), chunkConsumer);
+                default -> unknown(session.getId(), scope);
+            };
+            if (response.intent() == AgentIntent.UNKNOWN) {
+                sendEvent(emitter, "delta", response.answer());
+            }
         }
 
         saveMessage(session.getId(), "USER", request.message(), intent, request.clientContext(), scope);
@@ -105,6 +178,14 @@ public class AgentChatServiceImpl implements AgentChatService {
         return new AgentChatResponse(sessionId, AgentIntent.SEARCH_ARCHIVE, scope, finalAnswer, result.references());
     }
 
+    private AgentChatResponse searchStream(Long sessionId, String message, AgentResolvedScope scope, Consumer<String> chunkConsumer) {
+        AgentArchiveTool.SearchResult result = archiveTool.search(message, scope);
+        String draftAnswer = searchDraft(message, scope, result);
+        String finalAnswer = answerLlmService.enhanceStream(message, AgentIntent.SEARCH_ARCHIVE, scope,
+                draftAnswer, result.references(), result, chunkConsumer);
+        return new AgentChatResponse(sessionId, AgentIntent.SEARCH_ARCHIVE, scope, finalAnswer, result.references());
+    }
+
     private AgentChatResponse summarize(Long sessionId, AgentResolvedScope scope) {
         AgentArchiveTool.ScopeSummary summary = archiveTool.summarize(scope);
         StringBuilder answer = new StringBuilder();
@@ -128,6 +209,14 @@ public class AgentChatServiceImpl implements AgentChatService {
         }
         String finalAnswer = answerLlmService.enhance("总结当前范围", AgentIntent.SUMMARIZE_SCOPE, scope,
                 answer.toString(), summary.sampleReferences(), summary);
+        return new AgentChatResponse(sessionId, AgentIntent.SUMMARIZE_SCOPE, scope, finalAnswer, summary.sampleReferences());
+    }
+
+    private AgentChatResponse summarizeStream(Long sessionId, AgentResolvedScope scope, Consumer<String> chunkConsumer) {
+        AgentArchiveTool.ScopeSummary summary = archiveTool.summarize(scope);
+        String draftAnswer = summarizeDraft(scope, summary);
+        String finalAnswer = answerLlmService.enhanceStream("总结当前范围", AgentIntent.SUMMARIZE_SCOPE, scope,
+                draftAnswer, summary.sampleReferences(), summary, chunkConsumer);
         return new AgentChatResponse(sessionId, AgentIntent.SUMMARIZE_SCOPE, scope, finalAnswer, summary.sampleReferences());
     }
 
@@ -169,6 +258,33 @@ public class AgentChatServiceImpl implements AgentChatService {
         return new AgentChatResponse(sessionId, AgentIntent.CHECK_MISSING_MATERIALS, scope, finalAnswer, limitedReferences);
     }
 
+    private AgentChatResponse checkMissingMaterialsStream(Long sessionId, AgentResolvedScope scope, Consumer<String> chunkConsumer) {
+        MissingDraft draft = missingDraft(scope);
+        String finalAnswer = answerLlmService.enhanceStream("核验当前范围缺件情况", AgentIntent.CHECK_MISSING_MATERIALS, scope,
+                draft.answer(), draft.references(), draft.result(), chunkConsumer);
+        return new AgentChatResponse(sessionId, AgentIntent.CHECK_MISSING_MATERIALS, scope, finalAnswer, draft.references());
+    }
+
+    private AgentChatResponse discussArchiveInfo(Long sessionId, String message, AgentResolvedScope scope, AgentClientContext context) {
+        if (needsContentScope(AgentIntent.DISCUSS_ARCHIVE_INFO, scope, context)) {
+            return needScope(sessionId, AgentIntent.DISCUSS_ARCHIVE_INFO, scope);
+        }
+        AgentArchiveContentTool.DiscussResult result = contentTool.discuss(message, scope, context);
+        String draftAnswer = discussDraft(message, scope, result);
+        String finalAnswer = answerLlmService.enhance(message, AgentIntent.DISCUSS_ARCHIVE_INFO, scope,
+                draftAnswer, result.references(), result);
+        return new AgentChatResponse(sessionId, AgentIntent.DISCUSS_ARCHIVE_INFO, scope, finalAnswer, result.references());
+    }
+
+    private AgentChatResponse discussArchiveInfoStream(Long sessionId, String message, AgentResolvedScope scope,
+                                                       AgentClientContext context, Consumer<String> chunkConsumer) {
+        AgentArchiveContentTool.DiscussResult result = contentTool.discuss(message, scope, context);
+        String draftAnswer = discussDraft(message, scope, result);
+        String finalAnswer = answerLlmService.enhanceStream(message, AgentIntent.DISCUSS_ARCHIVE_INFO, scope,
+                draftAnswer, result.references(), result, chunkConsumer);
+        return new AgentChatResponse(sessionId, AgentIntent.DISCUSS_ARCHIVE_INFO, scope, finalAnswer, result.references());
+    }
+
     private AgentChatResponse outOfScope(Long sessionId, AgentResolvedScope scope) {
         String answer = "当前对话范围限定在" + scopeText(scope)
                 + "，不能扩展到页面范围之外查询。请回到全局档案页或对应上级目录后再提问。";
@@ -176,7 +292,9 @@ public class AgentChatServiceImpl implements AgentChatService {
     }
 
     private AgentChatResponse needScope(Long sessionId, AgentIntent intent, AgentResolvedScope scope) {
-        String answer = "这个问题需要明确的目录或馆区范围。请先进入要汇总/核验的文件夹，或在全局档案页选择馆区后再提问。";
+        String answer = intent == AgentIntent.DISCUSS_ARCHIVE_INFO
+                ? "这个问题需要明确的档案内容范围。请先进入某个档案详情页、选中要讨论的档案，或进入具体文件夹后再提问。"
+                : "这个问题需要明确的目录或馆区范围。请先进入要汇总/核验的文件夹，或在全局档案页选择馆区后再提问。";
         return new AgentChatResponse(sessionId, AgentIntent.NEED_SCOPE, scope, answer, List.of());
     }
 
@@ -198,6 +316,106 @@ public class AgentChatServiceImpl implements AgentChatService {
         return (intent == AgentIntent.SUMMARIZE_SCOPE || intent == AgentIntent.CHECK_MISSING_MATERIALS)
                 && scope.scopeType() == AgentScopeType.GLOBAL
                 && scope.hallId() == null;
+    }
+
+    private boolean needsContentScope(AgentIntent intent, AgentResolvedScope scope, AgentClientContext context) {
+        return intent == AgentIntent.DISCUSS_ARCHIVE_INFO
+                && scope.scopeType() == AgentScopeType.GLOBAL
+                && !contentTool.hasExplicitContentScope(scope, context);
+    }
+
+    private String searchDraft(String message, AgentResolvedScope scope, AgentArchiveTool.SearchResult result) {
+        StringBuilder answer = new StringBuilder();
+        answer.append("我按").append(scopeText(scope)).append("检索");
+        if (!result.keywords().isEmpty()) {
+            answer.append("，使用关键词：").append(String.join("、", result.keywords()));
+        }
+        answer.append("。");
+        if (result.references().isEmpty()) {
+            answer.append("没有找到匹配的正式档案。");
+        } else {
+            answer.append("找到 ").append(result.total()).append(" 条候选档案，前几条包括：");
+            appendReferences(answer, result.references(), 8);
+        }
+        return answer.toString();
+    }
+
+    private String summarizeDraft(AgentResolvedScope scope, AgentArchiveTool.ScopeSummary summary) {
+        StringBuilder answer = new StringBuilder();
+        answer.append("我按").append(scopeText(scope)).append("汇总：共 ")
+                .append(summary.documentCount()).append(" 份正式档案");
+        if (summary.personCount() > 0) {
+            answer.append("，可识别约 ").append(summary.personCount()).append(" 名学生");
+        }
+        answer.append("。其中成绩单 ").append(summary.transcriptCount())
+                .append(" 份，学籍材料 ").append(summary.studentStatusCount())
+                .append(" 份，学位材料 ").append(summary.degreeCount()).append(" 份。");
+        if (!summary.materialCounts().isEmpty()) {
+            answer.append("材料分布：");
+            for (Map.Entry<String, Integer> entry : summary.materialCounts().entrySet()) {
+                answer.append(entry.getKey()).append(" ").append(entry.getValue()).append(" 份；");
+            }
+        }
+        if (!summary.sampleReferences().isEmpty()) {
+            answer.append("样例档案：");
+            appendReferences(answer, summary.sampleReferences(), 5);
+        }
+        return answer.toString();
+    }
+
+    private MissingDraft missingDraft(AgentResolvedScope scope) {
+        AgentArchiveTool.MissingMaterialResult result = archiveTool.checkMissingMaterials(scope);
+        List<AgentDocumentReference> references = new ArrayList<>();
+        StringBuilder answer = new StringBuilder();
+        answer.append("我按").append(scopeText(scope)).append("做了轻量缺件核验。");
+        if (result.personCount() == 0) {
+            answer.append("当前范围内还没有足够的学生姓名线索，无法判断缺件情况。");
+            return new MissingDraft(answer.toString(), List.of(), result);
+        }
+        answer.append("可识别约 ").append(result.personCount()).append(" 名学生，其中 ")
+                .append(result.missingPersonCount()).append(" 名存在疑似缺件风险。");
+        if (!result.missingPeople().isEmpty()) {
+            answer.append("前几项风险：");
+            for (AgentArchiveTool.MissingPerson person : result.missingPeople().stream().limit(10).toList()) {
+                answer.append(person.name()).append("疑似缺");
+                List<String> missing = new ArrayList<>();
+                if (person.missingTranscript()) {
+                    missing.add("成绩单");
+                }
+                if (person.missingStudentStatus()) {
+                    missing.add("学籍材料");
+                }
+                if (person.missingDegree()) {
+                    missing.add("学位材料");
+                }
+                answer.append(String.join("、", missing)).append("；");
+                references.addAll(person.references());
+            }
+        }
+        answer.append("以上仅根据当前系统可见文件名、标签摘要和 OCR 文本判断，建议人工复核。");
+        return new MissingDraft(answer.toString(), references.stream().limit(20).toList(), result);
+    }
+
+    private String discussDraft(String message, AgentResolvedScope scope, AgentArchiveContentTool.DiscussResult result) {
+        StringBuilder answer = new StringBuilder();
+        answer.append("我按").append(scopeText(scope)).append("讨论档案内容。");
+        if (!result.keywords().isEmpty()) {
+            answer.append("关注关键词：").append(String.join("、", result.keywords())).append("。");
+        }
+        if (result.snippets().isEmpty()) {
+            answer.append("当前范围内没有找到可用于回答的档案正文、摘要或 OCR 片段。");
+            return answer.toString();
+        }
+        answer.append("共选取 ").append(result.snippets().size()).append(" 份相关档案片段作为依据：");
+        for (AgentArchiveContentTool.ContentSnippet snippet : result.snippets().stream().limit(5).toList()) {
+            answer.append(snippet.title()).append("：").append(snippet.snippet()).append("；");
+        }
+        answer.append("请只基于这些片段回答用户问题：").append(message);
+        return answer.toString();
+    }
+
+    private void sendEvent(SseEmitter emitter, String eventName, Object data) throws IOException {
+        emitter.send(SseEmitter.event().name(eventName).data(data));
     }
 
     private void appendReferences(StringBuilder answer, List<AgentDocumentReference> references, int limit) {
@@ -261,5 +479,9 @@ public class AgentChatServiceImpl implements AgentChatService {
         } catch (JsonProcessingException ex) {
             return "{}";
         }
+    }
+
+    private record MissingDraft(String answer, List<AgentDocumentReference> references,
+                                AgentArchiveTool.MissingMaterialResult result) {
     }
 }

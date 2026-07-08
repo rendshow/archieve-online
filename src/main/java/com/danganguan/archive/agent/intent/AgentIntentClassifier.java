@@ -11,6 +11,10 @@ public class AgentIntentClassifier {
         if (text.isBlank()) {
             return AgentIntent.UNKNOWN;
         }
+        if (containsAny(text, "这份", "这些", "当前档案", "当前文件", "选中", "内容", "讲了什么", "主要是什么",
+                "提到", "有没有提", "是否提", "休学", "转专业", "处分", "奖励", "毕业去向", "概括一下")) {
+            return AgentIntent.DISCUSS_ARCHIVE_INFO;
+        }
         if (containsAny(text, "总结", "汇总", "概览", "统计", "多少份", "多少个")) {
             return AgentIntent.SUMMARIZE_SCOPE;
         }

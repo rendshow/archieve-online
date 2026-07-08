@@ -12,8 +12,14 @@ import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +46,32 @@ public class AgentAnswerLlmService {
             return answer.isBlank() ? draftAnswer : answer;
         } catch (Exception ex) {
             return draftAnswer + "（AI 回答润色失败，已使用系统规则结果。）";
+        }
+    }
+
+    public String enhanceStream(String userMessage,
+                                AgentIntent intent,
+                                AgentResolvedScope scope,
+                                String draftAnswer,
+                                List<AgentDocumentReference> references,
+                                Object toolResult,
+                                Consumer<String> chunkConsumer) {
+        AiProviderProperties.OpenAiCompatible config = properties.getOpenaiCompatible();
+        if (!validConfig(config)) {
+            emitBySentence(draftAnswer, chunkConsumer);
+            return draftAnswer;
+        }
+        try {
+            String answer = callModelStream(config, userMessage, intent, scope, draftAnswer, references, toolResult, chunkConsumer);
+            if (answer == null || answer.isBlank()) {
+                emitBySentence(draftAnswer, chunkConsumer);
+                return draftAnswer;
+            }
+            return answer.trim();
+        } catch (Exception ex) {
+            String fallback = draftAnswer + "（AI 流式回答失败，已使用系统规则结果。）";
+            emitBySentence(fallback, chunkConsumer);
+            return fallback;
         }
     }
 
@@ -71,6 +103,86 @@ public class AgentAnswerLlmService {
                 .retrieve()
                 .body(Map.class);
         return extractMessageContent(response);
+    }
+
+    private String callModelStream(AiProviderProperties.OpenAiCompatible config,
+                                   String userMessage,
+                                   AgentIntent intent,
+                                   AgentResolvedScope scope,
+                                   String draftAnswer,
+                                   List<AgentDocumentReference> references,
+                                   Object toolResult,
+                                   Consumer<String> chunkConsumer) throws Exception {
+        Map<String, Object> payload = Map.of(
+                "model", config.getModel(),
+                "temperature", 0.2,
+                "stream", true,
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt()),
+                        Map.of("role", "user", "content", userPrompt(userMessage, intent, scope, draftAnswer, references, toolResult))
+                )
+        );
+        HttpClient client = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(config.getTimeoutSeconds()))
+                .build();
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(chatCompletionsUrl(config.getBaseUrl())))
+                .timeout(Duration.ofSeconds(config.getTimeoutSeconds()))
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + config.getApiKey())
+                .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                .POST(HttpRequest.BodyPublishers.ofString(toJson(payload)))
+                .build();
+        HttpResponse<java.util.stream.Stream<String>> response = client.send(request, HttpResponse.BodyHandlers.ofLines());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
+            throw new IllegalStateException("外部 AI 流式响应失败：" + response.statusCode());
+        }
+        StringBuilder answer = new StringBuilder();
+        try (java.util.stream.Stream<String> lines = response.body()) {
+            lines.forEach(line -> handleStreamLine(line, answer, chunkConsumer));
+        }
+        return answer.toString();
+    }
+
+    private void handleStreamLine(String line, StringBuilder answer, Consumer<String> chunkConsumer) {
+        if (line == null || line.isBlank() || !line.startsWith("data:")) {
+            return;
+        }
+        String data = line.substring("data:".length()).trim();
+        if ("[DONE]".equals(data)) {
+            return;
+        }
+        String delta = extractDeltaContent(data);
+        if (delta == null || delta.isBlank()) {
+            return;
+        }
+        answer.append(delta);
+        chunkConsumer.accept(delta);
+    }
+
+    private String extractDeltaContent(String data) {
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> json = objectMapper.readValue(data, Map.class);
+            Object choicesValue = json.get("choices");
+            if (!(choicesValue instanceof List<?> choices) || choices.isEmpty()) {
+                return null;
+            }
+            Object first = choices.get(0);
+            if (!(first instanceof Map<?, ?> choice)) {
+                return null;
+            }
+            Object deltaValue = choice.get("delta");
+            if (deltaValue instanceof Map<?, ?> deltaMap && deltaMap.get("content") != null) {
+                return deltaMap.get("content").toString();
+            }
+            Object messageValue = choice.get("message");
+            if (messageValue instanceof Map<?, ?> messageMap && messageMap.get("content") != null) {
+                return messageMap.get("content").toString();
+            }
+            return null;
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private String systemPrompt() {
@@ -179,5 +291,23 @@ public class AgentAnswerLlmService {
             return value == null ? "" : value;
         }
         return value.substring(0, maxLength);
+    }
+
+    private void emitBySentence(String text, Consumer<String> chunkConsumer) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        StringBuilder buffer = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char ch = text.charAt(i);
+            buffer.append(ch);
+            if ("。；！？\n".indexOf(ch) >= 0 || buffer.length() >= 30) {
+                chunkConsumer.accept(buffer.toString());
+                buffer.setLength(0);
+            }
+        }
+        if (!buffer.isEmpty()) {
+            chunkConsumer.accept(buffer.toString());
+        }
     }
 }
