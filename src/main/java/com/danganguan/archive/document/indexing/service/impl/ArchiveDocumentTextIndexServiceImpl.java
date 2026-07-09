@@ -25,6 +25,7 @@ import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -54,6 +55,11 @@ public class ArchiveDocumentTextIndexServiceImpl
         document.setAiSummary(firstNonBlank(result.summary(), document.getAiSummary()));
         document.setUpdatedAt(LocalDateTime.now());
         archiveDocumentService.updateById(document);
+        eventPublisher.publish(ArchiveRealtimeEvent.archiveDocumentIndexed(
+                document.getHallId(),
+                document.getId(),
+                "正式档案文本索引已更新"
+        ));
         return document;
     }
 
@@ -149,12 +155,14 @@ public class ArchiveDocumentTextIndexServiceImpl
         }
         int success = 0;
         int failed = 0;
+        List<Long> indexedDocumentIds = new ArrayList<>();
         for (ArchiveDocument document : documents) {
             try {
                 if (hasOcrText(document)) {
                     continue;
                 }
                 indexOne(document.getId());
+                indexedDocumentIds.add(document.getId());
                 success++;
             } catch (RuntimeException ex) {
                 failed++;
@@ -169,7 +177,18 @@ public class ArchiveDocumentTextIndexServiceImpl
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
         publish(job, "文本索引进度：" + value(job.getProcessedCount(), 0) + "/" + value(job.getTotalCount(), 0));
+        if (!indexedDocumentIds.isEmpty()) {
+            eventPublisher.publish(ArchiveRealtimeEvent.agentKnowledgeChanged(
+                    job.getHallId(),
+                    indexedDocumentIds,
+                    "Agent 可检索正文已更新"
+            ));
+        }
 
+        if (value(job.getProcessedCount(), 0) >= value(job.getTotalCount(), 0)) {
+            complete(job, failed > 0 ? "文本索引任务完成，部分档案处理失败" : "文本索引任务完成");
+            return;
+        }
         if (countMissing(job.getHallId()) <= 0) {
             complete(job, "文本索引任务完成");
             return;
@@ -242,7 +261,12 @@ public class ArchiveDocumentTextIndexServiceImpl
                 job.getId(),
                 job.getHallId(),
                 job.getStatus() == null ? null : job.getStatus().name(),
-                message
+                message,
+                job.getTotalCount(),
+                job.getProcessedCount(),
+                job.getSuccessCount(),
+                job.getSkippedCount(),
+                job.getFailedCount()
         ));
     }
 

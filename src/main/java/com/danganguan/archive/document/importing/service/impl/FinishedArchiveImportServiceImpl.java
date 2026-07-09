@@ -620,7 +620,10 @@ public class FinishedArchiveImportServiceImpl
                 job.getId(),
                 job.getHallId(),
                 job.getStatus() == null ? null : job.getStatus().name(),
-                message
+                message,
+                job.getTotalCount(),
+                job.getImportedCount(),
+                job.getSkippedCount()
         ));
     }
 
