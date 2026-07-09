@@ -128,6 +128,8 @@ public class ArchiveStorageProperties {
         private String routingKey = "archive.processing.task";
         private String importQueue = "archive.import.finished.queue";
         private String importRoutingKey = "archive.import.finished";
+        private String textIndexQueue = "archive.text.index.queue";
+        private String textIndexRoutingKey = "archive.text.index";
 
         public String getExchange() {
             return exchange;
@@ -167,6 +169,22 @@ public class ArchiveStorageProperties {
 
         public void setImportRoutingKey(String importRoutingKey) {
             this.importRoutingKey = importRoutingKey;
+        }
+
+        public String getTextIndexQueue() {
+            return textIndexQueue;
+        }
+
+        public void setTextIndexQueue(String textIndexQueue) {
+            this.textIndexQueue = textIndexQueue;
+        }
+
+        public String getTextIndexRoutingKey() {
+            return textIndexRoutingKey;
+        }
+
+        public void setTextIndexRoutingKey(String textIndexRoutingKey) {
+            this.textIndexRoutingKey = textIndexRoutingKey;
         }
     }
 }

@@ -26,6 +26,11 @@ public class RabbitTaskProcessingConfig {
     }
 
     @Bean
+    public Queue archiveTextIndexQueue(ArchiveStorageProperties properties) {
+        return new Queue(properties.getProcessing().getRabbitmq().getTextIndexQueue(), true);
+    }
+
+    @Bean
     public DirectExchange archiveTaskExchange(ArchiveStorageProperties properties) {
         return new DirectExchange(properties.getProcessing().getRabbitmq().getExchange(), true, false);
     }
@@ -44,6 +49,14 @@ public class RabbitTaskProcessingConfig {
         return BindingBuilder.bind(archiveFinishedImportQueue)
                 .to(archiveTaskExchange)
                 .with(properties.getProcessing().getRabbitmq().getImportRoutingKey());
+    }
+
+    @Bean
+    public Binding archiveTextIndexBinding(Queue archiveTextIndexQueue, DirectExchange archiveTaskExchange,
+                                           ArchiveStorageProperties properties) {
+        return BindingBuilder.bind(archiveTextIndexQueue)
+                .to(archiveTaskExchange)
+                .with(properties.getProcessing().getRabbitmq().getTextIndexRoutingKey());
     }
 
     @Bean

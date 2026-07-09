@@ -3,9 +3,11 @@ package com.danganguan.archive.document.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.document.dto.ArchiveDocumentQuery;
+import com.danganguan.archive.document.indexing.dto.CreateArchiveTextIndexJobRequest;
 import com.danganguan.archive.document.dto.UpdateArchiveDocumentNameRequest;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.indexing.dto.ArchiveDocumentTextIndexResult;
+import com.danganguan.archive.document.indexing.entity.ArchiveTextIndexJob;
 import com.danganguan.archive.document.indexing.service.ArchiveDocumentTextIndexService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -49,6 +51,18 @@ public class ArchiveDocumentController {
     public Result<ArchiveDocumentTextIndexResult> indexMissingText(@RequestParam(required = false) Long hallId,
                                                                    @RequestParam(defaultValue = "20") Integer limit) {
         return Result.ok(archiveDocumentTextIndexService.indexMissing(hallId, limit == null ? 20 : limit));
+    }
+
+    @Operation(summary = "创建正式档案文本索引任务", description = "创建后台任务，使用 RabbitMQ 分批补全缺失 OCR 的正式档案")
+    @PostMapping("/api/archive-documents/text-index/jobs")
+    public Result<ArchiveTextIndexJob> createTextIndexJob(@RequestBody(required = false) CreateArchiveTextIndexJobRequest request) {
+        return Result.ok(archiveDocumentTextIndexService.createJob(request));
+    }
+
+    @Operation(summary = "查询正式档案文本索引任务", description = "查询后台文本索引任务进度")
+    @GetMapping("/api/archive-documents/text-index/jobs/{jobId}")
+    public Result<ArchiveTextIndexJob> getTextIndexJob(@PathVariable Long jobId) {
+        return Result.ok(archiveDocumentTextIndexService.getJob(jobId));
     }
 
     @Operation(summary = "修改正式档案名称", description = "修改正式档案标题")

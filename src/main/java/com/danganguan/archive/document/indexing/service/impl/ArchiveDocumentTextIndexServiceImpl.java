@@ -1,17 +1,27 @@
 package com.danganguan.archive.document.indexing.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeRequest;
 import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
 import com.danganguan.archive.ai.analysis.service.DocumentAnalyzeService;
+import com.danganguan.archive.common.config.ArchiveStorageProperties;
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
+import com.danganguan.archive.document.indexing.ArchiveTextIndexMessage;
+import com.danganguan.archive.document.indexing.dto.CreateArchiveTextIndexJobRequest;
 import com.danganguan.archive.document.indexing.dto.ArchiveDocumentTextIndexResult;
+import com.danganguan.archive.document.indexing.entity.ArchiveTextIndexJob;
+import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexJobStatus;
+import com.danganguan.archive.document.indexing.mapper.ArchiveTextIndexJobMapper;
 import com.danganguan.archive.document.indexing.service.ArchiveDocumentTextIndexService;
 import com.danganguan.archive.document.process.ProcessedFileResult;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
+import com.danganguan.archive.event.ArchiveRealtimeEvent;
+import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
 import lombok.RequiredArgsConstructor;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -19,12 +29,19 @@ import java.util.List;
 
 @Service
 @RequiredArgsConstructor
-public class ArchiveDocumentTextIndexServiceImpl implements ArchiveDocumentTextIndexService {
+public class ArchiveDocumentTextIndexServiceImpl
+        extends ServiceImpl<ArchiveTextIndexJobMapper, ArchiveTextIndexJob>
+        implements ArchiveDocumentTextIndexService {
     private static final int DEFAULT_LIMIT = 20;
     private static final int MAX_LIMIT = 200;
+    private static final int DEFAULT_BATCH_SIZE = 10;
+    private static final int MAX_BATCH_SIZE = 50;
 
     private final ArchiveDocumentService archiveDocumentService;
     private final DocumentAnalyzeService documentAnalyzeService;
+    private final ArchiveStorageProperties properties;
+    private final RabbitTemplate rabbitTemplate;
+    private final ArchiveRealtimeEventPublisher eventPublisher;
 
     @Override
     public ArchiveDocument indexOne(Long documentId) {
@@ -66,6 +83,100 @@ public class ArchiveDocumentTextIndexServiceImpl implements ArchiveDocumentTextI
         return new ArchiveDocumentTextIndexResult(documents.size(), indexed, 0, failed);
     }
 
+    @Override
+    public ArchiveTextIndexJob createJob(CreateArchiveTextIndexJobRequest request) {
+        int batchSize = normalizeBatchSize(request == null ? null : request.batchSize());
+        Long hallId = request == null ? null : request.hallId();
+        int total = countMissing(hallId);
+        LocalDateTime now = LocalDateTime.now();
+        ArchiveTextIndexJob job = new ArchiveTextIndexJob();
+        job.setHallId(hallId);
+        job.setStatus(ArchiveTextIndexJobStatus.PENDING);
+        job.setBatchSize(batchSize);
+        job.setTotalCount(total);
+        job.setProcessedCount(0);
+        job.setSuccessCount(0);
+        job.setSkippedCount(0);
+        job.setFailedCount(0);
+        job.setErrorMessage(null);
+        job.setStartedAt(null);
+        job.setFinishedAt(null);
+        job.setCreatedAt(now);
+        job.setUpdatedAt(now);
+        save(job);
+        publish(job, "文本索引任务已创建，共 " + total + " 份待处理");
+        if (total == 0) {
+            complete(job, "没有缺失 OCR 的正式档案");
+            return job;
+        }
+        submit(job.getId());
+        return job;
+    }
+
+    @Override
+    public ArchiveTextIndexJob getJob(Long jobId) {
+        ArchiveTextIndexJob job = getById(jobId);
+        if (job == null) {
+            throw new BizException("文本索引任务不存在");
+        }
+        return job;
+    }
+
+    @Override
+    public void processJobBatch(Long jobId) {
+        ArchiveTextIndexJob job = getJob(jobId);
+        try {
+            processJobBatchInternal(job);
+        } catch (RuntimeException ex) {
+            fail(job, ex.getMessage());
+            throw ex;
+        }
+    }
+
+    private void processJobBatchInternal(ArchiveTextIndexJob job) {
+        if (job.getStatus() == ArchiveTextIndexJobStatus.COMPLETED
+                || job.getStatus() == ArchiveTextIndexJobStatus.FAILED) {
+            return;
+        }
+        if (job.getStatus() == ArchiveTextIndexJobStatus.PENDING) {
+            job.setStatus(ArchiveTextIndexJobStatus.RUNNING);
+            job.setStartedAt(LocalDateTime.now());
+        }
+        List<ArchiveDocument> documents = loadMissing(job.getHallId(), value(job.getBatchSize(), DEFAULT_BATCH_SIZE));
+        if (documents.isEmpty()) {
+            complete(job, "文本索引任务完成");
+            return;
+        }
+        int success = 0;
+        int failed = 0;
+        for (ArchiveDocument document : documents) {
+            try {
+                if (hasOcrText(document)) {
+                    continue;
+                }
+                indexOne(document.getId());
+                success++;
+            } catch (RuntimeException ex) {
+                failed++;
+                job.setErrorMessage(limit(ex.getMessage(), 1000));
+            }
+        }
+        int processed = documents.size();
+        job.setProcessedCount(value(job.getProcessedCount(), 0) + processed);
+        job.setSuccessCount(value(job.getSuccessCount(), 0) + success);
+        job.setFailedCount(value(job.getFailedCount(), 0) + failed);
+        job.setSkippedCount(value(job.getSkippedCount(), 0) + Math.max(0, processed - success - failed));
+        job.setUpdatedAt(LocalDateTime.now());
+        updateById(job);
+        publish(job, "文本索引进度：" + value(job.getProcessedCount(), 0) + "/" + value(job.getTotalCount(), 0));
+
+        if (countMissing(job.getHallId()) <= 0) {
+            complete(job, "文本索引任务完成");
+            return;
+        }
+        submit(job.getId());
+    }
+
     private DocumentAnalyzeResult analyze(ArchiveDocument document) {
         ProcessedFileResult processedFile = new ProcessedFileResult(
                 document.getStoragePath(),
@@ -74,6 +185,80 @@ public class ArchiveDocumentTextIndexServiceImpl implements ArchiveDocumentTextI
                 ""
         );
         return documentAnalyzeService.analyze(new DocumentAnalyzeRequest(null, List.of(), processedFile));
+    }
+
+    private int countMissing(Long hallId) {
+        return Math.toIntExact(archiveDocumentService.count(missingWrapper(hallId)));
+    }
+
+    private List<ArchiveDocument> loadMissing(Long hallId, int limit) {
+        return archiveDocumentService.list(missingWrapper(hallId)
+                .orderByAsc(ArchiveDocument::getArchivedAt)
+                .last("LIMIT " + limit));
+    }
+
+    private LambdaQueryWrapper<ArchiveDocument> missingWrapper(Long hallId) {
+        return new LambdaQueryWrapper<ArchiveDocument>()
+                .eq(ArchiveDocument::getStatus, ArchiveDocumentStatus.ACTIVE)
+                .eq(hallId != null, ArchiveDocument::getHallId, hallId)
+                .and(inner -> inner
+                        .isNull(ArchiveDocument::getOcrText)
+                        .or()
+                        .eq(ArchiveDocument::getOcrText, ""));
+    }
+
+    private void submit(Long jobId) {
+        if ("rabbitmq".equalsIgnoreCase(properties.getProcessing().getMode())) {
+            ArchiveStorageProperties.Rabbitmq rabbitmq = properties.getProcessing().getRabbitmq();
+            rabbitTemplate.convertAndSend(
+                    rabbitmq.getExchange(),
+                    rabbitmq.getTextIndexRoutingKey(),
+                    new ArchiveTextIndexMessage(jobId)
+            );
+            return;
+        }
+        processJobBatch(jobId);
+    }
+
+    private void complete(ArchiveTextIndexJob job, String message) {
+        job.setStatus(ArchiveTextIndexJobStatus.COMPLETED);
+        job.setFinishedAt(LocalDateTime.now());
+        job.setUpdatedAt(LocalDateTime.now());
+        updateById(job);
+        publish(job, message);
+    }
+
+    private void fail(ArchiveTextIndexJob job, String message) {
+        job.setStatus(ArchiveTextIndexJobStatus.FAILED);
+        job.setErrorMessage(limit(message, 1000));
+        job.setFinishedAt(LocalDateTime.now());
+        job.setUpdatedAt(LocalDateTime.now());
+        updateById(job);
+        publish(job, "文本索引任务失败：" + limit(message, 200));
+    }
+
+    private void publish(ArchiveTextIndexJob job, String message) {
+        eventPublisher.publish(ArchiveRealtimeEvent.textIndexJobChanged(
+                job.getId(),
+                job.getHallId(),
+                job.getStatus() == null ? null : job.getStatus().name(),
+                message
+        ));
+    }
+
+    private int normalizeBatchSize(Integer batchSize) {
+        if (batchSize == null || batchSize < 1) {
+            return DEFAULT_BATCH_SIZE;
+        }
+        return Math.min(batchSize, MAX_BATCH_SIZE);
+    }
+
+    private boolean hasOcrText(ArchiveDocument document) {
+        return document.getOcrText() != null && !document.getOcrText().isBlank();
+    }
+
+    private int value(Integer value, int fallback) {
+        return value == null ? fallback : value;
     }
 
     private String blankToNull(String value) {
@@ -85,5 +270,12 @@ public class ArchiveDocumentTextIndexServiceImpl implements ArchiveDocumentTextI
             return first;
         }
         return second;
+    }
+
+    private String limit(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength);
     }
 }
