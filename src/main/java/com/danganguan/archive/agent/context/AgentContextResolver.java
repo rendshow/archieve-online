@@ -25,7 +25,9 @@ public class AgentContextResolver {
             return new AgentResolvedScope(AgentScopeType.FOLDER, safeContext.hallId(), normalizeFolderPath(safeContext.folderPath()),
                     null, null, "CLIENT_CONTEXT", "当前页面限定在文件夹及其子目录");
         }
-        if (intent == AgentIntent.SUMMARIZE_SCOPE || intent == AgentIntent.CHECK_MISSING_MATERIALS) {
+        if (intent == AgentIntent.SUMMARIZE_SCOPE
+                || intent == AgentIntent.YEAR_DISTRIBUTION
+                || intent == AgentIntent.CHECK_MISSING_MATERIALS) {
             return new AgentResolvedScope(AgentScopeType.GLOBAL, safeContext.hallId(), null, null, null,
                     "CLIENT_CONTEXT", "当前页面没有文件夹范围，汇总和核验需要用户进入具体范围");
         }

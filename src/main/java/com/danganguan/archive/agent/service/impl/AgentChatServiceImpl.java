@@ -10,7 +10,8 @@ import com.danganguan.archive.agent.entity.AgentMessage;
 import com.danganguan.archive.agent.entity.AgentSession;
 import com.danganguan.archive.agent.enums.AgentIntent;
 import com.danganguan.archive.agent.enums.AgentScopeType;
-import com.danganguan.archive.agent.intent.AgentIntentClassifier;
+import com.danganguan.archive.agent.intent.AgentIntentDecision;
+import com.danganguan.archive.agent.intent.AgentIntentDecisionService;
 import com.danganguan.archive.agent.llm.AgentAnswerLlmService;
 import com.danganguan.archive.agent.mapper.AgentMessageMapper;
 import com.danganguan.archive.agent.mapper.AgentSessionMapper;
@@ -38,7 +39,7 @@ import java.util.function.Consumer;
 public class AgentChatServiceImpl implements AgentChatService {
     private final AgentSessionMapper agentSessionMapper;
     private final AgentMessageMapper agentMessageMapper;
-    private final AgentIntentClassifier intentClassifier;
+    private final AgentIntentDecisionService intentDecisionService;
     private final AgentContextResolver contextResolver;
     private final AgentArchiveTool archiveTool;
     private final AgentArchiveContentTool contentTool;
@@ -52,7 +53,8 @@ public class AgentChatServiceImpl implements AgentChatService {
             throw new BizException("消息不能为空");
         }
         AgentSession session = getOrCreateSession(request);
-        AgentIntent intent = intentClassifier.classify(request.message());
+        AgentIntentDecision decision = intentDecisionService.decide(request.message(), request.clientContext());
+        AgentIntent intent = decision.intent();
         AgentResolvedScope scope = contextResolver.resolve(intent, request.clientContext());
 
         AgentChatResponse response;
@@ -72,7 +74,7 @@ public class AgentChatServiceImpl implements AgentChatService {
             };
         }
 
-        saveMessage(session.getId(), "USER", request.message(), intent, request.clientContext(), scope);
+        saveMessage(session.getId(), "USER", request.message(), intent, request.clientContext(), Map.of("scope", scope, "decision", decision));
         saveMessage(session.getId(), "ASSISTANT", response.answer(), response.intent(), request.clientContext(), response.scope());
         touchSession(session, request.message());
         return response;
@@ -102,12 +104,14 @@ public class AgentChatServiceImpl implements AgentChatService {
             throw new BizException("消息不能为空");
         }
         AgentSession session = getOrCreateSession(request);
-        AgentIntent intent = intentClassifier.classify(request.message());
+        AgentIntentDecision decision = intentDecisionService.decide(request.message(), request.clientContext());
+        AgentIntent intent = decision.intent();
         AgentResolvedScope scope = contextResolver.resolve(intent, request.clientContext());
         sendEvent(emitter, "meta", Map.of(
                 "sessionId", session.getId(),
                 "intent", intent.name(),
-                "scope", scope
+                "scope", scope,
+                "decision", decision
         ));
 
         AgentChatResponse response;
@@ -139,7 +143,7 @@ public class AgentChatServiceImpl implements AgentChatService {
             }
         }
 
-        saveMessage(session.getId(), "USER", request.message(), intent, request.clientContext(), scope);
+        saveMessage(session.getId(), "USER", request.message(), intent, request.clientContext(), Map.of("scope", scope, "decision", decision));
         saveMessage(session.getId(), "ASSISTANT", response.answer(), response.intent(), request.clientContext(), response.scope());
         touchSession(session, request.message());
         return response;
