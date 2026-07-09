@@ -421,15 +421,29 @@ public class AgentChatServiceImpl implements AgentChatService {
                 .append(distribution.documentCount())
                 .append(" 份正式档案。");
         if (distribution.yearCounts().isEmpty()) {
-            answer.append("我没有从题名、目录或档号中识别到明确年份。");
+            answer.append("我没有从当前目录的子目录层级中识别到明确年份。");
             return answer.toString();
         }
-        answer.append("从题名、目录和档号可识别到 ")
+        answer.append("从目录层级识别到 ")
                 .append(distribution.yearCounts().size())
                 .append(" 个年份：");
         distribution.yearCounts().forEach((year, count) ->
                 answer.append(year).append(" 年 ").append(count).append(" 份；"));
-        answer.append("以上是元数据统计，不依赖 OCR 正文。");
+        if (distribution.expectedStartYear() != null && distribution.expectedEndYear() != null) {
+            answer.append("目录名显示的年份范围为 ")
+                    .append(distribution.expectedStartYear())
+                    .append("-")
+                    .append(distribution.expectedEndYear())
+                    .append("。");
+            if (distribution.missingYears().isEmpty()) {
+                answer.append("按当前目录层级看，没有发现缺失年份。");
+            } else {
+                answer.append("按当前目录层级看，缺失年份：")
+                        .append(String.join("、", distribution.missingYears()))
+                        .append("。");
+            }
+        }
+        answer.append("本统计只看目录层级，不使用 OCR 正文、题名或档号中的零散数字。");
         return answer.toString();
     }
 

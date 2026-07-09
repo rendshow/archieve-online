@@ -29,7 +29,8 @@ import java.util.regex.Pattern;
 public class AgentArchiveTool {
     private static final int SCOPE_SCAN_LIMIT = 5000;
     private static final Pattern PERSON_NAME_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})$");
-    private static final Pattern YEAR_PATTERN = Pattern.compile("(?<!\\d)(19\\d{2}|20\\d{2})(?!\\d)");
+    private static final Pattern YEAR_SEGMENT_PATTERN = Pattern.compile("^(19\\d{2}|20\\d{2})$");
+    private static final Pattern YEAR_RANGE_PATTERN = Pattern.compile("(19\\d{2}|20\\d{2})\\s*[-~—–至到]\\s*(19\\d{2}|20\\d{2})");
 
     private final ArchiveDocumentService archiveDocumentService;
     private final AgentArchiveRetriever archiveRetriever;
@@ -70,12 +71,17 @@ public class AgentArchiveTool {
     public YearDistribution summarizeYears(AgentResolvedScope scope) {
         List<ArchiveDocument> documents = loadScopeDocuments(scope);
         Map<String, Integer> yearCounts = new TreeMap<>();
+        YearRange expectedRange = extractExpectedYearRange(scope.folderPath());
         for (ArchiveDocument document : documents) {
-            for (String year : extractYears(document)) {
+            for (String year : extractTrustedDirectoryYears(scope, document)) {
                 yearCounts.merge(year, 1, Integer::sum);
             }
         }
-        return new YearDistribution(documents.size(), yearCounts, toReferences(documents.stream().limit(10).toList()));
+        List<String> missingYears = missingYears(expectedRange, yearCounts);
+        return new YearDistribution(documents.size(), yearCounts, missingYears,
+                expectedRange == null ? null : expectedRange.startYear(),
+                expectedRange == null ? null : expectedRange.endYear(),
+                "目录层级", toReferences(documents.stream().limit(10).toList()));
     }
 
     public MissingMaterialResult checkMissingMaterials(AgentResolvedScope scope) {
@@ -199,21 +205,108 @@ public class AgentArchiveTool {
         return matcher.find() ? matcher.group(1) : null;
     }
 
-    private List<String> extractYears(ArchiveDocument document) {
-        String text = String.join(" ",
-                document.getTitle() == null ? "" : document.getTitle(),
-                document.getFolderName() == null ? "" : document.getFolderName(),
-                document.getFolderPath() == null ? "" : document.getFolderPath(),
-                document.getArchiveNo() == null ? "" : document.getArchiveNo());
+    private List<String> extractTrustedDirectoryYears(AgentResolvedScope scope, ArchiveDocument document) {
+        String folderPath = normalizePath(document.getFolderPath());
+        String scopePath = normalizePath(scope.folderPath());
+        if (folderPath == null || folderPath.isBlank()) {
+            return List.of();
+        }
+        String scopeYear = exactYear(lastSegment(scopePath));
+        if (scopeYear != null && (folderPath.equals(scopePath) || folderPath.startsWith(scopePath + "/"))) {
+            return List.of(scopeYear);
+        }
+        if (scope.scopeType() == AgentScopeType.FOLDER && scopePath != null && !scopePath.isBlank()) {
+            String relativePath = relativePath(scopePath, folderPath);
+            String directChild = firstSegment(relativePath);
+            String directChildYear = exactYear(directChild);
+            return directChildYear == null ? List.of() : List.of(directChildYear);
+        }
+        return exactYearSegments(folderPath);
+    }
+
+    private List<String> exactYearSegments(String folderPath) {
         List<String> years = new ArrayList<>();
-        Matcher matcher = YEAR_PATTERN.matcher(text);
-        while (matcher.find()) {
-            String year = matcher.group(1);
-            if (!years.contains(year)) {
+        for (String segment : folderPath.split("/")) {
+            String year = exactYear(segment);
+            if (year != null && !years.contains(year)) {
                 years.add(year);
             }
         }
         return years;
+    }
+
+    private String exactYear(String text) {
+        if (text == null) {
+            return null;
+        }
+        Matcher matcher = YEAR_SEGMENT_PATTERN.matcher(text.trim());
+        return matcher.matches() ? matcher.group(1) : null;
+    }
+
+    private YearRange extractExpectedYearRange(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Matcher matcher = YEAR_RANGE_PATTERN.matcher(text);
+        YearRange range = null;
+        while (matcher.find()) {
+            int start = Integer.parseInt(matcher.group(1));
+            int end = Integer.parseInt(matcher.group(2));
+            if (start <= end && end - start <= 80) {
+                range = new YearRange(start, end);
+            }
+        }
+        return range;
+    }
+
+    private List<String> missingYears(YearRange range, Map<String, Integer> yearCounts) {
+        if (range == null) {
+            return List.of();
+        }
+        List<String> missingYears = new ArrayList<>();
+        for (int year = range.startYear(); year <= range.endYear(); year++) {
+            if (!yearCounts.containsKey(String.valueOf(year))) {
+                missingYears.add(String.valueOf(year));
+            }
+        }
+        return missingYears;
+    }
+
+    private String normalizePath(String path) {
+        if (path == null) {
+            return null;
+        }
+        String normalized = path.replace('\\', '/').trim();
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+        return normalized;
+    }
+
+    private String relativePath(String scopePath, String folderPath) {
+        if (folderPath.equals(scopePath)) {
+            return "";
+        }
+        return folderPath.startsWith(scopePath + "/") ? folderPath.substring(scopePath.length() + 1) : folderPath;
+    }
+
+    private String firstSegment(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        int slash = path.indexOf('/');
+        return slash < 0 ? path : path.substring(0, slash);
+    }
+
+    private String lastSegment(String path) {
+        if (path == null || path.isBlank()) {
+            return null;
+        }
+        int slash = path.lastIndexOf('/');
+        return slash < 0 ? path : path.substring(slash + 1);
     }
 
     private List<AgentDocumentReference> toReferences(List<ArchiveDocument> documents) {
@@ -252,8 +345,12 @@ public class AgentArchiveTool {
                                List<AgentDocumentReference> sampleReferences) {
     }
 
-    public record YearDistribution(int documentCount, Map<String, Integer> yearCounts,
+    public record YearDistribution(int documentCount, Map<String, Integer> yearCounts, List<String> missingYears,
+                                   Integer expectedStartYear, Integer expectedEndYear, String source,
                                    List<AgentDocumentReference> sampleReferences) {
+    }
+
+    private record YearRange(int startYear, int endYear) {
     }
 
     public record MissingMaterialResult(int personCount, int missingPersonCount, List<MissingPerson> missingPeople) {
