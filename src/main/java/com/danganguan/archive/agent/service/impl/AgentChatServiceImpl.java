@@ -64,8 +64,10 @@ public class AgentChatServiceImpl implements AgentChatService {
             response = switch (intent) {
                 case SEARCH_ARCHIVE -> search(session.getId(), request.message(), scope);
                 case SUMMARIZE_SCOPE -> summarize(session.getId(), request.message(), scope);
+                case YEAR_DISTRIBUTION -> summarizeYears(session.getId(), scope);
                 case CHECK_MISSING_MATERIALS -> checkMissingMaterials(session.getId(), request.message(), scope);
                 case DISCUSS_ARCHIVE_INFO -> discussArchiveInfo(session.getId(), request.message(), scope, request.clientContext());
+                case CAPABILITY_HELP -> capabilityHelp(session.getId(), scope);
                 default -> unknown(session.getId(), scope);
             };
         }
@@ -126,8 +128,10 @@ public class AgentChatServiceImpl implements AgentChatService {
             response = switch (intent) {
                 case SEARCH_ARCHIVE -> searchStream(session.getId(), request.message(), scope, chunkConsumer);
                 case SUMMARIZE_SCOPE -> summarizeStream(session.getId(), request.message(), scope, chunkConsumer);
+                case YEAR_DISTRIBUTION -> summarizeYearsStream(session.getId(), scope, chunkConsumer);
                 case CHECK_MISSING_MATERIALS -> checkMissingMaterialsStream(session.getId(), request.message(), scope, chunkConsumer);
                 case DISCUSS_ARCHIVE_INFO -> discussArchiveInfoStream(session.getId(), request.message(), scope, request.clientContext(), chunkConsumer);
+                case CAPABILITY_HELP -> capabilityHelpStream(session.getId(), scope, chunkConsumer);
                 default -> unknown(session.getId(), scope);
             };
             if (response.intent() == AgentIntent.UNKNOWN) {
@@ -235,6 +239,18 @@ public class AgentChatServiceImpl implements AgentChatService {
         return new AgentChatResponse(sessionId, AgentIntent.SUMMARIZE_SCOPE, scope, finalAnswer, summary.sampleReferences());
     }
 
+    private AgentChatResponse summarizeYears(Long sessionId, AgentResolvedScope scope) {
+        AgentArchiveTool.YearDistribution distribution = archiveTool.summarizeYears(scope);
+        String answer = yearDistributionAnswer(scope, distribution);
+        return new AgentChatResponse(sessionId, AgentIntent.YEAR_DISTRIBUTION, scope, answer, distribution.sampleReferences());
+    }
+
+    private AgentChatResponse summarizeYearsStream(Long sessionId, AgentResolvedScope scope, Consumer<String> chunkConsumer) {
+        AgentChatResponse response = summarizeYears(sessionId, scope);
+        chunkConsumer.accept(response.answer());
+        return response;
+    }
+
     private AgentChatResponse checkMissingMaterials(Long sessionId, String message, AgentResolvedScope scope) {
         AgentArchiveTool.MissingMaterialResult result = archiveTool.checkMissingMaterials(scope);
         List<AgentDocumentReference> references = new ArrayList<>();
@@ -314,8 +330,17 @@ public class AgentChatServiceImpl implements AgentChatService {
     }
 
     private AgentChatResponse unknown(Long sessionId, AgentResolvedScope scope) {
-        String answer = "我目前主要支持三类问题：查找档案、汇总当前范围、核验当前范围是否疑似缺成绩单/学籍/学位材料。你可以换一种更具体的问法。";
-        return new AgentChatResponse(sessionId, AgentIntent.UNKNOWN, scope, answer, List.of());
+        return new AgentChatResponse(sessionId, AgentIntent.UNKNOWN, scope, capabilityText(), List.of());
+    }
+
+    private AgentChatResponse capabilityHelp(Long sessionId, AgentResolvedScope scope) {
+        return new AgentChatResponse(sessionId, AgentIntent.CAPABILITY_HELP, scope, capabilityText(), List.of());
+    }
+
+    private AgentChatResponse capabilityHelpStream(Long sessionId, AgentResolvedScope scope, Consumer<String> chunkConsumer) {
+        String answer = capabilityText();
+        chunkConsumer.accept(answer);
+        return new AgentChatResponse(sessionId, AgentIntent.CAPABILITY_HELP, scope, answer, List.of());
     }
 
     private boolean isOutOfPageScope(String message, AgentResolvedScope scope) {
@@ -328,7 +353,9 @@ public class AgentChatServiceImpl implements AgentChatService {
     }
 
     private boolean needsScope(AgentIntent intent, AgentResolvedScope scope) {
-        return (intent == AgentIntent.SUMMARIZE_SCOPE || intent == AgentIntent.CHECK_MISSING_MATERIALS)
+        return (intent == AgentIntent.SUMMARIZE_SCOPE
+                || intent == AgentIntent.YEAR_DISTRIBUTION
+                || intent == AgentIntent.CHECK_MISSING_MATERIALS)
                 && scope.scopeType() == AgentScopeType.GLOBAL
                 && scope.hallId() == null;
     }
@@ -384,6 +411,24 @@ public class AgentChatServiceImpl implements AgentChatService {
         return answer.toString();
     }
 
+    private String yearDistributionAnswer(AgentResolvedScope scope, AgentArchiveTool.YearDistribution distribution) {
+        StringBuilder answer = new StringBuilder();
+        answer.append(scopeText(scope)).append("共有 ")
+                .append(distribution.documentCount())
+                .append(" 份正式档案。");
+        if (distribution.yearCounts().isEmpty()) {
+            answer.append("我没有从题名、目录或档号中识别到明确年份。");
+            return answer.toString();
+        }
+        answer.append("从题名、目录和档号可识别到 ")
+                .append(distribution.yearCounts().size())
+                .append(" 个年份：");
+        distribution.yearCounts().forEach((year, count) ->
+                answer.append(year).append(" 年 ").append(count).append(" 份；"));
+        answer.append("以上是元数据统计，不依赖 OCR 正文。");
+        return answer.toString();
+    }
+
     private MissingDraft missingDraft(AgentResolvedScope scope) {
         AgentArchiveTool.MissingMaterialResult result = archiveTool.checkMissingMaterials(scope);
         List<AgentDocumentReference> references = new ArrayList<>();
@@ -433,6 +478,17 @@ public class AgentChatServiceImpl implements AgentChatService {
         }
         answer.append("请只基于这些片段回答用户问题：").append(message);
         return answer.toString();
+    }
+
+    private String capabilityText() {
+        return """
+                我可以帮你做这些事：
+                1. 按自然语言线索查档案，比如姓名、档号、年份、目录、材料类型。
+                2. 在当前文件夹内做统计，比如文件数量、年份分布、材料分布。
+                3. 基于已完成 OCR 或摘要的档案回答内容问题，并说明证据来自题名、目录还是正文。
+                4. 做轻量缺件核验，比如疑似缺成绩单、学籍或学位材料。
+                5. 当档案还没有文本索引时，我会提示只能基于题名和目录判断。
+                """;
     }
 
     private boolean isCountOnlyQuestion(String message) {

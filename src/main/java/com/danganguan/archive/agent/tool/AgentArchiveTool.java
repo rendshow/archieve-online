@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -28,6 +29,7 @@ import java.util.regex.Pattern;
 public class AgentArchiveTool {
     private static final int SCOPE_SCAN_LIMIT = 5000;
     private static final Pattern PERSON_NAME_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})$");
+    private static final Pattern YEAR_PATTERN = Pattern.compile("(?<!\\d)(19\\d{2}|20\\d{2})(?!\\d)");
 
     private final ArchiveDocumentService archiveDocumentService;
     private final AgentArchiveRetriever archiveRetriever;
@@ -63,6 +65,17 @@ public class AgentArchiveTool {
                 .count();
         return new ScopeSummary(documents.size(), (int) personCount, transcriptCount, degreeCount,
                 studentStatusCount, materialCounts, toReferences(documents.stream().limit(10).toList()));
+    }
+
+    public YearDistribution summarizeYears(AgentResolvedScope scope) {
+        List<ArchiveDocument> documents = loadScopeDocuments(scope);
+        Map<String, Integer> yearCounts = new TreeMap<>();
+        for (ArchiveDocument document : documents) {
+            for (String year : extractYears(document)) {
+                yearCounts.merge(year, 1, Integer::sum);
+            }
+        }
+        return new YearDistribution(documents.size(), yearCounts, toReferences(documents.stream().limit(10).toList()));
     }
 
     public MissingMaterialResult checkMissingMaterials(AgentResolvedScope scope) {
@@ -186,6 +199,23 @@ public class AgentArchiveTool {
         return matcher.find() ? matcher.group(1) : null;
     }
 
+    private List<String> extractYears(ArchiveDocument document) {
+        String text = String.join(" ",
+                document.getTitle() == null ? "" : document.getTitle(),
+                document.getFolderName() == null ? "" : document.getFolderName(),
+                document.getFolderPath() == null ? "" : document.getFolderPath(),
+                document.getArchiveNo() == null ? "" : document.getArchiveNo());
+        List<String> years = new ArrayList<>();
+        Matcher matcher = YEAR_PATTERN.matcher(text);
+        while (matcher.find()) {
+            String year = matcher.group(1);
+            if (!years.contains(year)) {
+                years.add(year);
+            }
+        }
+        return years;
+    }
+
     private List<AgentDocumentReference> toReferences(List<ArchiveDocument> documents) {
         return documents.stream()
                 .map(document -> new AgentDocumentReference(
@@ -220,6 +250,10 @@ public class AgentArchiveTool {
     public record ScopeSummary(int documentCount, int personCount, int transcriptCount, int degreeCount,
                                int studentStatusCount, Map<String, Integer> materialCounts,
                                List<AgentDocumentReference> sampleReferences) {
+    }
+
+    public record YearDistribution(int documentCount, Map<String, Integer> yearCounts,
+                                   List<AgentDocumentReference> sampleReferences) {
     }
 
     public record MissingMaterialResult(int personCount, int missingPersonCount, List<MissingPerson> missingPeople) {

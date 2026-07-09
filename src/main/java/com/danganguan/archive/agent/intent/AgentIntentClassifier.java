@@ -11,6 +11,12 @@ public class AgentIntentClassifier {
         if (text.isBlank()) {
             return AgentIntent.UNKNOWN;
         }
+        if (containsAny(text, "你能干嘛", "你会什么", "你能做什么", "能做什么", "支持什么", "怎么用", "帮助")) {
+            return AgentIntent.CAPABILITY_HELP;
+        }
+        if (isYearDistributionQuestion(text)) {
+            return AgentIntent.YEAR_DISTRIBUTION;
+        }
         if (containsAny(text, "总结", "汇总", "概览", "统计", "多少份", "多少个", "多少文件", "多少个文件",
                 "文件数", "文件数量", "档案数", "档案数量")) {
             return AgentIntent.SUMMARIZE_SCOPE;
@@ -37,5 +43,10 @@ public class AgentIntentClassifier {
             }
         }
         return false;
+    }
+
+    private boolean isYearDistributionQuestion(String text) {
+        return containsAny(text, "哪几年", "哪些年份", "年份分布", "几年", "年份")
+                && containsAny(text, "档案", "文件", "材料", "当前文件夹", "目录");
     }
 }
