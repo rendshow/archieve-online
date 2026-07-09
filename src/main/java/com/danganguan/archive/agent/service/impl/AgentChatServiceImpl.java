@@ -169,6 +169,12 @@ public class AgentChatServiceImpl implements AgentChatService {
         answer.append("。");
         if (result.references().isEmpty()) {
             answer.append("没有找到匹配的正式档案。");
+        } else if (result.requiresMaterialEvidence() && !result.hasMaterialContentEvidence()) {
+            answer.append("找到 ").append(result.total())
+                    .append(" 条相关档案，但当前只命中了题名、目录或基础摘要，不能确认其属于")
+                    .append(String.join("、", result.materialKeywords()))
+                    .append("。相关档案包括：");
+            appendReferences(answer, result.references(), 5);
         } else {
             answer.append("找到 ").append(result.total()).append(" 条候选档案，前几条包括：");
             appendReferences(answer, result.references(), 8);
@@ -342,6 +348,12 @@ public class AgentChatServiceImpl implements AgentChatService {
         answer.append("。");
         if (result.references().isEmpty()) {
             answer.append("没有找到匹配的正式档案。");
+        } else if (result.requiresMaterialEvidence() && !result.hasMaterialContentEvidence()) {
+            answer.append("找到 ").append(result.total())
+                    .append(" 条相关档案，但当前只命中了题名、目录或基础摘要，不能确认其属于")
+                    .append(String.join("、", result.materialKeywords()))
+                    .append("。相关档案包括：");
+            appendReferences(answer, result.references(), 5);
         } else {
             answer.append("找到 ").append(result.total()).append(" 条候选档案，前几条包括：");
             appendReferences(answer, result.references(), 8);

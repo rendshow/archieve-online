@@ -5,6 +5,8 @@ import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.document.dto.ArchiveDocumentQuery;
 import com.danganguan.archive.document.dto.UpdateArchiveDocumentNameRequest;
 import com.danganguan.archive.document.entity.ArchiveDocument;
+import com.danganguan.archive.document.indexing.dto.ArchiveDocumentTextIndexResult;
+import com.danganguan.archive.document.indexing.service.ArchiveDocumentTextIndexService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class ArchiveDocumentController {
     private final ArchiveDocumentService archiveDocumentService;
+    private final ArchiveDocumentTextIndexService archiveDocumentTextIndexService;
 
     @Operation(summary = "确认工作区档案入库", description = "将工作区档案确认为正式档案，并复制标签、更新任务状态")
     @PostMapping("/api/workspace-documents/{id}/approve")
@@ -33,6 +36,19 @@ public class ArchiveDocumentController {
     @GetMapping("/api/archive-documents/{id}")
     public Result<ArchiveDocument> detail(@PathVariable Long id) {
         return Result.ok(archiveDocumentService.getById(id));
+    }
+
+    @Operation(summary = "补全文本索引", description = "对单个正式档案执行 PDF 文本抽取/OCR，并写回摘要和 OCR 正文")
+    @PostMapping("/api/archive-documents/{id}/text-index")
+    public Result<ArchiveDocument> indexText(@PathVariable Long id) {
+        return Result.ok(archiveDocumentTextIndexService.indexOne(id));
+    }
+
+    @Operation(summary = "批量补全文本索引", description = "按馆区批量处理缺少 OCR 正文的正式档案，适合旧档导入后分批执行")
+    @PostMapping("/api/archive-documents/text-index/missing")
+    public Result<ArchiveDocumentTextIndexResult> indexMissingText(@RequestParam(required = false) Long hallId,
+                                                                   @RequestParam(defaultValue = "20") Integer limit) {
+        return Result.ok(archiveDocumentTextIndexService.indexMissing(hallId, limit == null ? 20 : limit));
     }
 
     @Operation(summary = "修改正式档案名称", description = "修改正式档案标题")

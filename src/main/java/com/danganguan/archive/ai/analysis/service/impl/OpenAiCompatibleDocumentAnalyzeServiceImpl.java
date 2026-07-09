@@ -148,8 +148,8 @@ public class OpenAiCompatibleDocumentAnalyzeServiceImpl implements DocumentAnaly
                 """.formatted(
                 sourceNames(request),
                 request.processedFile().storagePath(),
-                blankToNone(request.task().getFileNameExample()),
-                blankToNone(request.task().getFolderNameExample()),
+                blankToNone(request.task() == null ? null : request.task().getFileNameExample()),
+                blankToNone(request.task() == null ? null : request.task().getFolderNameExample()),
                 limit(extractedText, TEXT_LIMIT)
         );
         content.add(Map.of("type", "text", "text", text));

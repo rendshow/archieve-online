@@ -5,6 +5,9 @@ import com.danganguan.archive.agent.dto.AgentClientContext;
 import com.danganguan.archive.agent.dto.AgentDocumentReference;
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
 import com.danganguan.archive.agent.enums.AgentScopeType;
+import com.danganguan.archive.agent.retrieval.AgentArchiveRetriever;
+import com.danganguan.archive.agent.retrieval.ArchiveRetrievalHit;
+import com.danganguan.archive.agent.retrieval.ArchiveRetrievalResult;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
@@ -25,20 +28,37 @@ public class AgentArchiveContentTool {
     private static final int SNIPPET_LIMIT = 1000;
 
     private final ArchiveDocumentService archiveDocumentService;
+    private final AgentArchiveRetriever archiveRetriever;
 
     public DiscussResult discuss(String message, AgentResolvedScope scope, AgentClientContext context) {
         List<String> keywords = extractKeywords(message);
-        List<ArchiveDocument> documents = loadDocuments(scope, context, keywords);
-        List<ContentSnippet> snippets = documents.stream()
-                .map(document -> toSnippet(document, keywords))
+        List<ArchiveRetrievalHit> hits = loadHits(message, scope, context, keywords);
+        List<ContentSnippet> snippets = hits.stream()
+                .map(hit -> toSnippet(hit, keywords))
                 .toList();
-        return new DiscussResult(keywords, snippets, toReferences(documents));
+        return new DiscussResult(keywords, snippets, toReferencesFromHits(hits));
     }
 
     public boolean hasExplicitContentScope(AgentResolvedScope scope, AgentClientContext context) {
         return scope.scopeType() == AgentScopeType.DOCUMENT
                 || scope.scopeType() == AgentScopeType.FOLDER
                 || (context != null && context.selectedDocumentIds() != null && !context.selectedDocumentIds().isEmpty());
+    }
+
+    private List<ArchiveRetrievalHit> loadHits(String message, AgentResolvedScope scope, AgentClientContext context, List<String> keywords) {
+        if ((context == null || context.selectedDocumentIds() == null || context.selectedDocumentIds().isEmpty())
+                && !keywords.isEmpty()) {
+            ArchiveRetrievalResult result = archiveRetriever.retrieve(message, scope, DOCUMENT_LIMIT);
+            return result.hits();
+        }
+        List<ArchiveDocument> documents = loadDocuments(scope, context, keywords);
+        return documents.stream()
+                .map(document -> new ArchiveRetrievalHit(document, 0,
+                        hasContent(document)
+                                ? ArchiveRetrievalHit.EvidenceLevel.CONTENT
+                                : ArchiveRetrievalHit.EvidenceLevel.METADATA,
+                        keywords, List.of("当前范围"), ""))
+                .toList();
     }
 
     private List<ArchiveDocument> loadDocuments(AgentResolvedScope scope, AgentClientContext context, List<String> keywords) {
@@ -88,10 +108,14 @@ public class AgentArchiveContentTool {
         return wrapper;
     }
 
-    private ContentSnippet toSnippet(ArchiveDocument document, List<String> keywords) {
+    private ContentSnippet toSnippet(ArchiveRetrievalHit hit, List<String> keywords) {
+        ArchiveDocument document = hit.document();
         String summary = blankToEmpty(document.getAiSummary());
         String ocrText = blankToEmpty(document.getOcrText()).replaceAll("\\s+", " ").trim();
-        String snippet = bestSnippet(ocrText, keywords);
+        String snippet = hit.snippet();
+        if (snippet == null || snippet.isBlank()) {
+            snippet = bestSnippet(ocrText, keywords);
+        }
         if (snippet.isBlank()) {
             snippet = limit(summary, SNIPPET_LIMIT);
         }
@@ -104,7 +128,7 @@ public class AgentArchiveContentTool {
                 document.getFolderPath(),
                 summary,
                 snippet,
-                keywords.isEmpty() ? "按当前页面范围选取" : "按问题关键词匹配摘要或 OCR"
+                keywords.isEmpty() ? "按当前页面范围选取" : "命中字段：" + String.join("、", hit.matchedFields())
         );
     }
 
@@ -184,6 +208,24 @@ public class AgentArchiveContentTool {
                         document.getFileFormat() == null ? null : document.getFileFormat().name()
                 ))
                 .toList();
+    }
+
+    private List<AgentDocumentReference> toReferencesFromHits(List<ArchiveRetrievalHit> hits) {
+        return hits.stream()
+                .map(ArchiveRetrievalHit::document)
+                .map(document -> new AgentDocumentReference(
+                        document.getId(),
+                        document.getHallId(),
+                        document.getTitle(),
+                        document.getFolderPath(),
+                        document.getFileFormat() == null ? null : document.getFileFormat().name()
+                ))
+                .toList();
+    }
+
+    private boolean hasContent(ArchiveDocument document) {
+        return (document.getOcrText() != null && !document.getOcrText().isBlank())
+                || (document.getAiSummary() != null && !document.getAiSummary().isBlank());
     }
 
     private String blankToEmpty(String value) {

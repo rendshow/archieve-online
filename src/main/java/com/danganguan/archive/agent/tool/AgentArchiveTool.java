@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.danganguan.archive.agent.dto.AgentDocumentReference;
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
 import com.danganguan.archive.agent.enums.AgentScopeType;
+import com.danganguan.archive.agent.retrieval.AgentArchiveRetriever;
+import com.danganguan.archive.agent.retrieval.ArchiveRetrievalHit;
+import com.danganguan.archive.agent.retrieval.ArchiveRetrievalResult;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
@@ -23,36 +26,17 @@ import java.util.regex.Pattern;
 @Component
 @RequiredArgsConstructor
 public class AgentArchiveTool {
-    private static final int SEARCH_LIMIT = 10;
     private static final int SCOPE_SCAN_LIMIT = 5000;
     private static final Pattern PERSON_NAME_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})$");
 
     private final ArchiveDocumentService archiveDocumentService;
+    private final AgentArchiveRetriever archiveRetriever;
 
     public SearchResult search(String message, AgentResolvedScope scope) {
-        List<String> keywords = extractKeywords(message);
-        LambdaQueryWrapper<ArchiveDocument> wrapper = baseScopeWrapper(scope)
-                .orderByDesc(ArchiveDocument::getArchivedAt)
-                .last("LIMIT " + SEARCH_LIMIT);
-        if (!keywords.isEmpty()) {
-            wrapper.and(and -> {
-                for (int i = 0; i < keywords.size(); i++) {
-                    String keyword = keywords.get(i);
-                    if (i > 0) {
-                        and.or();
-                    }
-                    and.like(ArchiveDocument::getTitle, keyword)
-                            .or()
-                            .like(ArchiveDocument::getFolderPath, keyword)
-                            .or()
-                            .like(ArchiveDocument::getAiSummary, keyword)
-                            .or()
-                            .like(ArchiveDocument::getOcrText, keyword);
-                }
-            });
-        }
-        List<ArchiveDocument> documents = archiveDocumentService.list(wrapper);
-        return new SearchResult(keywords, toReferences(documents), documents.size());
+        ArchiveRetrievalResult result = archiveRetriever.retrieve(message, scope);
+        List<ArchiveRetrievalHit> hits = result.hits();
+        return new SearchResult(result.keywords(), result.materialKeywords(), toReferencesFromHits(hits), hits.size(),
+                result.requiresMaterialEvidence(), result.hasMaterialContentEvidence(), hits);
     }
 
     public ScopeSummary summarize(AgentResolvedScope scope) {
@@ -214,7 +198,23 @@ public class AgentArchiveTool {
                 .toList();
     }
 
-    public record SearchResult(List<String> keywords, List<AgentDocumentReference> references, int total) {
+    private List<AgentDocumentReference> toReferencesFromHits(List<ArchiveRetrievalHit> hits) {
+        return hits.stream()
+                .map(ArchiveRetrievalHit::document)
+                .map(document -> new AgentDocumentReference(
+                        document.getId(),
+                        document.getHallId(),
+                        document.getTitle(),
+                        document.getFolderPath(),
+                        document.getFileFormat() == null ? null : document.getFileFormat().name()
+                ))
+                .toList();
+    }
+
+    public record SearchResult(List<String> keywords, List<String> materialKeywords,
+                               List<AgentDocumentReference> references, int total,
+                               boolean requiresMaterialEvidence, boolean hasMaterialContentEvidence,
+                               List<ArchiveRetrievalHit> hits) {
     }
 
     public record ScopeSummary(int documentCount, int personCount, int transcriptCount, int degreeCount,
