@@ -25,3 +25,9 @@ application-prod.yml
 
 # Maven wrapper cache
 .mvn/wrapper/maven-wrapper.jar
+
+# Private Agent evaluation artifacts
+/evaluation/private/
+/scripts/evaluation/node_modules/
+__pycache__/
+*.py[cod]

@@ -1,5 +1,9 @@
-import sys
+import argparse
+import json
 import logging
+import sys
+
+from rapidocr_adapter import create_engine, recognize
 
 
 def main():
@@ -8,32 +12,28 @@ def main():
     if hasattr(sys.stderr, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8")
 
-    if len(sys.argv) < 2:
-        print("usage: rapidocr_ocr.py <image_path>", file=sys.stderr)
-        return 2
+    parser = argparse.ArgumentParser(description="Run RapidOCR for one image.")
+    parser.add_argument("image_path")
+    parser.add_argument("--json", action="store_true", help="Output text boxes and confidence as JSON.")
+    args = parser.parse_args()
 
-    image_path = sys.argv[1]
     try:
-        from rapidocr import RapidOCR
+        engine = create_engine()
     except Exception as exc:
-        print(f"missing rapidocr dependency: {exc}", file=sys.stderr)
+        print(str(exc), file=sys.stderr)
         return 3
 
     try:
         logging.getLogger("RapidOCR").setLevel(logging.ERROR)
-        ocr = RapidOCR()
-        result = ocr(image_path)
+        result = recognize(engine, args.image_path)
     except Exception as exc:
-        print(f"rapidocr failed: {exc}", file=sys.stderr)
+        print(str(exc), file=sys.stderr)
         return 4
 
-    if hasattr(result, "txts"):
-        text = "\n".join(item for item in result.txts if item)
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
     else:
-        if isinstance(result, tuple) and result:
-            result = result[0]
-        text = "\n".join(item[1] for item in result or [] if len(item) > 1 and item[1])
-    print(text.strip())
+        print(result["text"])
     return 0
 
 
