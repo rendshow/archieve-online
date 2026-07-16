@@ -6,6 +6,7 @@ import com.danganguan.archive.document.logicalgroup.dto.RebuildArchiveLogicalGro
 import com.danganguan.archive.document.logicalgroup.entity.ArchiveLogicalGroup;
 
 import java.util.List;
+import java.util.Set;
 
 public interface ArchiveLogicalGroupService {
     ArchiveLogicalGroupRebuildResult rebuild(RebuildArchiveLogicalGroupsRequest request);
@@ -15,4 +16,6 @@ public interface ArchiveLogicalGroupService {
     ArchiveLogicalGroupDetail detail(Long groupId);
 
     void deleteGroupsContainingDocuments(List<Long> documentIds);
+
+    void rebuildFolders(Long hallId, Set<String> folderPaths);
 }

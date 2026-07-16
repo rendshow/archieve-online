@@ -28,6 +28,7 @@ import com.danganguan.archive.tag.entity.DocumentTag;
 import com.danganguan.archive.tag.enums.DocumentType;
 import com.danganguan.archive.tag.service.DocumentTagService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
 import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -49,6 +50,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -58,6 +60,7 @@ import java.util.zip.ZipFile;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FinishedArchiveImportServiceImpl
         extends ServiceImpl<FinishedArchiveImportJobMapper, FinishedArchiveImportJob>
         implements FinishedArchiveImportService {
@@ -686,7 +689,7 @@ public class FinishedArchiveImportServiceImpl
         document.setUpdatedAt(now);
         document.setDeleted(0);
         archiveDocumentService.save(document);
-        progress.imported();
+        progress.imported(folderPath);
     }
 
     private int pageCount(String storagePath, String ext) {
@@ -725,7 +728,24 @@ public class FinishedArchiveImportServiceImpl
         job.setUpdatedAt(LocalDateTime.now());
         updateById(job);
         publishImportJob(job, "成品档案导入完成");
+        rebuildImportedFolders(progress);
         eventPublisher.publish(ArchiveRealtimeEvent.archiveDocumentsChanged(job.getHallId(), List.of(), "正式档案库已更新"));
+    }
+
+    private void rebuildImportedFolders(ImportProgress progress) {
+        if (progress.importedFolderPaths.isEmpty()) {
+            log.info("成品档案导入完成但没有新增文件，无需重建逻辑档案组，jobId={}", progress.job.getId());
+            return;
+        }
+        try {
+            log.info("成品档案导入完成，开始重建逻辑档案组，jobId={}, folderCount={}",
+                    progress.job.getId(), progress.importedFolderPaths.size());
+            archiveLogicalGroupService.rebuildFolders(progress.hall.getId(), progress.importedFolderPaths);
+        } catch (RuntimeException ex) {
+            // The import is already durable; grouping can be rebuilt later without affecting original files.
+            log.warn("成品档案导入后重建逻辑档案组失败，jobId={}", progress.job.getId(), ex);
+            publishImportJob(progress.job, "成品档案已导入，但逻辑档案组重建失败，可稍后重试");
+        }
     }
 
     private void fail(FinishedArchiveImportJob job, String message) {
@@ -867,6 +887,7 @@ public class FinishedArchiveImportServiceImpl
         private final ArchiveHall hall;
         private final Path sourceRoot;
         private final List<String> skippedFiles = new ArrayList<>();
+        private final Set<String> importedFolderPaths = new LinkedHashSet<>();
         private int importedCount;
         private int changedSinceUpdate;
 
@@ -877,8 +898,9 @@ public class FinishedArchiveImportServiceImpl
             this.importedCount = value(job.getImportedCount());
         }
 
-        private void imported() {
+        private void imported(String folderPath) {
             importedCount++;
+            importedFolderPaths.add(folderPath);
             changed();
         }
 

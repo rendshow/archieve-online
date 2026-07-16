@@ -24,6 +24,7 @@ import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 @Service
@@ -131,6 +132,17 @@ public class ArchiveLogicalGroupServiceImpl extends ServiceImpl<ArchiveLogicalGr
         memberMapper.delete(new LambdaQueryWrapper<ArchiveLogicalGroupMember>()
                 .in(ArchiveLogicalGroupMember::getGroupId, groupIds));
         removeByIds(groupIds);
+    }
+
+    @Override
+    public void rebuildFolders(Long hallId, Set<String> folderPaths) {
+        if (hallId == null || folderPaths == null || folderPaths.isEmpty()) {
+            return;
+        }
+        folderPaths.stream()
+                .map(this::normalizeFolderPath)
+                .distinct()
+                .forEach(folderPath -> rebuild(new RebuildArchiveLogicalGroupsRequest(hallId, folderPath)));
     }
 
     private void clearFolderGroups(Long hallId, String folderPath) {

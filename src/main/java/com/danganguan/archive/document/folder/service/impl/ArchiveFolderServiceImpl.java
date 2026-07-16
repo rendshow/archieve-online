@@ -9,6 +9,7 @@ import com.danganguan.archive.document.folder.dto.MoveArchiveDocumentRequest;
 import com.danganguan.archive.document.folder.dto.MoveArchiveFolderRequest;
 import com.danganguan.archive.document.folder.dto.MoveArchiveFolderResult;
 import com.danganguan.archive.document.folder.service.ArchiveFolderService;
+import com.danganguan.archive.document.logicalgroup.service.ArchiveLogicalGroupService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -18,13 +19,16 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
 public class ArchiveFolderServiceImpl implements ArchiveFolderService {
     private final ArchiveDocumentService archiveDocumentService;
+    private final ArchiveLogicalGroupService archiveLogicalGroupService;
 
     @Override
     public List<ArchiveFolderNode> tree(Long hallId) {
@@ -84,6 +88,7 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
     }
 
     @Override
+    @Transactional
     public ArchiveDocument moveDocument(Long documentId, MoveArchiveDocumentRequest request) {
         if (documentId == null) {
             throw new BizException("档案 ID 不能为空");
@@ -92,11 +97,16 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
         if (document == null || document.getStatus() != ArchiveDocumentStatus.ACTIVE) {
             throw new BizException("正式档案不存在");
         }
+        String sourceFolderPath = documentFolderPath(document);
         String targetFolderPath = normalize(request == null ? null : request.targetFolderPath());
         document.setFolderPath(targetFolderPath);
         document.setFolderName(firstSegment(targetFolderPath));
         document.setUpdatedAt(LocalDateTime.now());
         archiveDocumentService.updateById(document);
+        Set<String> affectedFolderPaths = new LinkedHashSet<>();
+        affectedFolderPaths.add(sourceFolderPath);
+        affectedFolderPaths.add(targetFolderPath);
+        archiveLogicalGroupService.rebuildFolders(document.getHallId(), affectedFolderPaths);
         return document;
     }
 
@@ -128,6 +138,7 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
         }
 
         LocalDateTime now = LocalDateTime.now();
+        Set<String> affectedFolderPaths = new LinkedHashSet<>();
         for (ArchiveDocument document : documents) {
             String oldPath = documentFolderPath(document);
             String suffix = oldPath.equals(sourceFolderPath) ? "" : oldPath.substring(sourceFolderPath.length() + 1);
@@ -136,7 +147,10 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
             document.setFolderName(firstSegment(newPath));
             document.setUpdatedAt(now);
             archiveDocumentService.updateById(document);
+            affectedFolderPaths.add(oldPath);
+            affectedFolderPaths.add(newPath);
         }
+        archiveLogicalGroupService.rebuildFolders(request.hallId(), affectedFolderPaths);
 
         return new MoveArchiveFolderResult(request.hallId(), sourceFolderPath, targetFolderPath, documents.size());
     }
