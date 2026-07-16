@@ -26,4 +26,6 @@ public interface FinishedArchiveImportService {
     void processJob(Long jobId);
 
     FinishedArchiveImportCleanupResult deleteAllImportedArchives();
+
+    FinishedArchiveImportCleanupResult deleteAllImportedArchiveRecords();
 }

@@ -75,4 +75,10 @@ public class FinishedArchiveImportController {
     public Result<FinishedArchiveImportCleanupResult> deleteAllImportedArchives() {
         return Result.ok(finishedArchiveImportService.deleteAllImportedArchives());
     }
+
+    @Operation(summary = "清空已导入旧档案数据库记录", description = "仅删除成品档案导入产生的 IMP 档案、关联标签和导入任务；保留对象存储文件，适用于切换到新 MinIO bucket 前的开发环境清理")
+    @DeleteMapping("/api/archive-imports/finished/database-records")
+    public Result<FinishedArchiveImportCleanupResult> deleteAllImportedArchiveRecords() {
+        return Result.ok(finishedArchiveImportService.deleteAllImportedArchiveRecords());
+    }
 }

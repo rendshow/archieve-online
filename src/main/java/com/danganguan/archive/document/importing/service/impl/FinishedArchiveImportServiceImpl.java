@@ -189,18 +189,44 @@ public class FinishedArchiveImportServiceImpl
     @Override
     @Transactional
     public FinishedArchiveImportCleanupResult deleteAllImportedArchives() {
-        List<ArchiveDocument> documents = archiveDocumentService.lambdaQuery()
-                .isNull(ArchiveDocument::getTaskId)
-                .isNull(ArchiveDocument::getWorkspaceDocumentId)
-                .likeRight(ArchiveDocument::getArchiveNo, "IMP")
-                .likeRight(ArchiveDocument::getStoragePath, "imported/")
-                .list();
-        List<Long> documentIds = documents.stream().map(ArchiveDocument::getId).toList();
+        List<ArchiveDocument> documents = importedArchiveDocuments();
 
         // Delete objects first. A storage failure leaves database references intact for a later retry.
         for (ArchiveDocument document : documents) {
             fileStorageService.deleteArchive(document.getStoragePath());
         }
+
+        FinishedArchiveImportCleanupResult result = deleteImportedDatabaseRecords(documents);
+        try {
+            deleteDirectoryIfExists(storageRoot().resolve("import-jobs"));
+        } catch (IOException ex) {
+            throw new BizException("删除导入暂存文件失败：" + ex.getMessage());
+        }
+        return new FinishedArchiveImportCleanupResult(
+                result.deletedDocumentCount(),
+                documents.size(),
+                result.deletedTagCount(),
+                result.deletedImportJobCount()
+        );
+    }
+
+    @Override
+    @Transactional
+    public FinishedArchiveImportCleanupResult deleteAllImportedArchiveRecords() {
+        return deleteImportedDatabaseRecords(importedArchiveDocuments());
+    }
+
+    private List<ArchiveDocument> importedArchiveDocuments() {
+        return archiveDocumentService.lambdaQuery()
+                .isNull(ArchiveDocument::getTaskId)
+                .isNull(ArchiveDocument::getWorkspaceDocumentId)
+                .likeRight(ArchiveDocument::getArchiveNo, "IMP")
+                .likeRight(ArchiveDocument::getStoragePath, "imported/")
+                .list();
+    }
+
+    private FinishedArchiveImportCleanupResult deleteImportedDatabaseRecords(List<ArchiveDocument> documents) {
+        List<Long> documentIds = documents.stream().map(ArchiveDocument::getId).toList();
 
         int deletedTagCount = 0;
         if (!documentIds.isEmpty()) {
@@ -218,14 +244,9 @@ public class FinishedArchiveImportServiceImpl
         int deletedImportJobCount = Math.toIntExact(count());
         remove(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<FinishedArchiveImportJob>()
                 .isNotNull(FinishedArchiveImportJob::getId));
-        try {
-            deleteDirectoryIfExists(storageRoot().resolve("import-jobs"));
-        } catch (IOException ex) {
-            throw new BizException("删除导入暂存文件失败：" + ex.getMessage());
-        }
         return new FinishedArchiveImportCleanupResult(
                 documents.size(),
-                documents.size(),
+                0,
                 deletedTagCount,
                 deletedImportJobCount
         );
