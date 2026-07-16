@@ -145,6 +145,35 @@ CREATE TABLE IF NOT EXISTS archive_document (
   INDEX idx_archive_document_archived_at (archived_at)
 );
 
+CREATE TABLE IF NOT EXISTS archive_logical_group (
+  id BIGINT PRIMARY KEY,
+  hall_id BIGINT NOT NULL,
+  folder_path VARCHAR(500) NOT NULL DEFAULT '',
+  group_key VARCHAR(500) NOT NULL,
+  group_type VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  person_name VARCHAR(64),
+  archive_no VARCHAR(128),
+  confidence VARCHAR(16) NOT NULL,
+  grouping_rule VARCHAR(64) NOT NULL,
+  requires_review TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  deleted TINYINT(1) NOT NULL DEFAULT 0,
+  INDEX idx_archive_logical_group_folder (hall_id, folder_path(191)),
+  INDEX idx_archive_logical_group_person_name (person_name)
+);
+
+CREATE TABLE IF NOT EXISTS archive_logical_group_member (
+  id BIGINT PRIMARY KEY,
+  group_id BIGINT NOT NULL,
+  archive_document_id BIGINT NOT NULL,
+  member_order INT NOT NULL,
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uk_archive_logical_group_member_document (archive_document_id),
+  INDEX idx_archive_logical_group_member_group (group_id)
+);
+
 CREATE TABLE IF NOT EXISTS finished_archive_import_job (
   id BIGINT PRIMARY KEY,
   hall_id BIGINT NOT NULL,
