@@ -76,6 +76,8 @@ archive:
       api-key: ${ARCHIVE_AI_API_KEY:}
       model: ${ARCHIVE_AI_MODEL:}
       timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}
+  agent-v2:
+    llm-enabled: ${ARCHIVE_AGENT_V2_LLM_ENABLED:false}
   naming:
     provider: ${ARCHIVE_NAMING_PROVIDER:local}
   boundary:

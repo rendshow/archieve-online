@@ -36,6 +36,9 @@ archive:
       api-key: your-api-key
       model: your-model-or-endpoint
       timeout-seconds: 60
+  agent-v2:
+    # 开启后，Agent V2 复用 archive.ai.openai-compatible 配置，仅润色已有工具证据的回答。
+    llm-enabled: false
   naming:
     # 可选：local / openai-compatible。openai-compatible 会复用 archive.ai.openai-compatible 的模型配置。
     provider: openai-compatible

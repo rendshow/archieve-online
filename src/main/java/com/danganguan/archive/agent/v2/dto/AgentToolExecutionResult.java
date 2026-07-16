@@ -8,6 +8,7 @@ import java.util.List;
 public record AgentToolExecutionResult(
         AgentTaskSpec task,
         String status,
+        String answerSource,
         String answer,
         List<AgentDocumentReference> documents,
         List<ArchiveFactEvidence> evidence,
