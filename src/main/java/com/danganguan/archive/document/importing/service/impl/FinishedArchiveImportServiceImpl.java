@@ -7,6 +7,8 @@ import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.importing.FinishedArchiveImportMessage;
+import com.danganguan.archive.document.logicalgroup.service.ArchiveLogicalGroupService;
+import com.danganguan.archive.document.mapper.ArchiveDocumentMapper;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkUploadResult;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkedCompleteRequest;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveImportResult;
@@ -31,7 +33,7 @@ import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -59,16 +61,20 @@ import java.util.zip.ZipFile;
 public class FinishedArchiveImportServiceImpl
         extends ServiceImpl<FinishedArchiveImportJobMapper, FinishedArchiveImportJob>
         implements FinishedArchiveImportService {
+    private static final int CLEANUP_DATABASE_MAX_ATTEMPTS = 3;
     private static final Set<String> SUPPORTED_FILE_EXTENSIONS = Set.of("pdf", "png", "jpg", "jpeg");
     private static final Set<String> SUPPORTED_ARCHIVE_EXTENSIONS = Set.of("zip", "7z");
 
     private final ArchiveHallService archiveHallService;
     private final ArchiveDocumentService archiveDocumentService;
+    private final ArchiveDocumentMapper archiveDocumentMapper;
+    private final ArchiveLogicalGroupService archiveLogicalGroupService;
     private final DocumentTagService documentTagService;
     private final FileStorageService fileStorageService;
     private final ArchiveStorageProperties properties;
     private final RabbitTemplate rabbitTemplate;
     private final ArchiveRealtimeEventPublisher eventPublisher;
+    private final TransactionTemplate transactionTemplate;
 
     @Override
     public FinishedArchiveImportResult importFinishedArchives(Long hallId, List<MultipartFile> files) {
@@ -187,16 +193,20 @@ public class FinishedArchiveImportServiceImpl
     }
 
     @Override
-    @Transactional
     public FinishedArchiveImportCleanupResult deleteAllImportedArchives() {
         List<ArchiveDocument> documents = importedArchiveDocuments();
+        FinishedArchiveImportCleanupResult result = deleteImportedDatabaseRecordsWithRetry(documents);
 
-        // Delete objects first. A storage failure leaves database references intact for a later retry.
+        int deletedObjectCount = 0;
+        int failedObjectCount = 0;
         for (ArchiveDocument document : documents) {
-            fileStorageService.deleteArchive(document.getStoragePath());
+            try {
+                fileStorageService.deleteArchive(document.getStoragePath());
+                deletedObjectCount++;
+            } catch (RuntimeException ex) {
+                failedObjectCount++;
+            }
         }
-
-        FinishedArchiveImportCleanupResult result = deleteImportedDatabaseRecords(documents);
         try {
             deleteDirectoryIfExists(storageRoot().resolve("import-jobs"));
         } catch (IOException ex) {
@@ -204,16 +214,16 @@ public class FinishedArchiveImportServiceImpl
         }
         return new FinishedArchiveImportCleanupResult(
                 result.deletedDocumentCount(),
-                documents.size(),
+                deletedObjectCount,
+                failedObjectCount,
                 result.deletedTagCount(),
                 result.deletedImportJobCount()
         );
     }
 
     @Override
-    @Transactional
     public FinishedArchiveImportCleanupResult deleteAllImportedArchiveRecords() {
-        return deleteImportedDatabaseRecords(importedArchiveDocuments());
+        return deleteImportedDatabaseRecordsWithRetry(importedArchiveDocuments());
     }
 
     private List<ArchiveDocument> importedArchiveDocuments() {
@@ -238,6 +248,7 @@ public class FinishedArchiveImportServiceImpl
                     .eq(DocumentTag::getDocumentType, DocumentType.ARCHIVE)
                     .in(DocumentTag::getDocumentId, documentIds)
                     .remove();
+            archiveLogicalGroupService.deleteGroupsContainingDocuments(documentIds);
             archiveDocumentService.removeByIds(documentIds);
         }
 
@@ -247,9 +258,53 @@ public class FinishedArchiveImportServiceImpl
         return new FinishedArchiveImportCleanupResult(
                 documents.size(),
                 0,
+                0,
                 deletedTagCount,
                 deletedImportJobCount
         );
+    }
+
+    private FinishedArchiveImportCleanupResult deleteImportedDatabaseRecordsWithRetry(List<ArchiveDocument> documents) {
+        RuntimeException last = null;
+        for (int attempt = 1; attempt <= CLEANUP_DATABASE_MAX_ATTEMPTS; attempt++) {
+            try {
+                FinishedArchiveImportCleanupResult result = transactionTemplate.execute(
+                        status -> deleteImportedDatabaseRecords(documents)
+                );
+                if (result == null) {
+                    throw new BizException("清理导入档案数据库记录失败");
+                }
+                return result;
+            } catch (RuntimeException ex) {
+                last = ex;
+                if (!isDeadlock(ex) || attempt == CLEANUP_DATABASE_MAX_ATTEMPTS) {
+                    throw ex;
+                }
+                waitBeforeCleanupRetry(attempt);
+            }
+        }
+        throw last == null ? new BizException("清理导入档案数据库记录失败") : last;
+    }
+
+    private boolean isDeadlock(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains("deadlock")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void waitBeforeCleanupRetry(int attempt) {
+        try {
+            Thread.sleep(100L * attempt);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new BizException("清理导入档案时被中断");
+        }
     }
 
     @Override
@@ -603,6 +658,11 @@ public class FinishedArchiveImportServiceImpl
         String ext = extension(fileName);
         String folderPath = folderPath(normalizedPath);
         String title = stripExtension(fileName);
+        OutputFormat outputFormat = outputFormat(ext);
+        if (archiveDocumentMapper.countActiveByHallFolderAndTitle(progress.hall.getId(), folderPath, title) > 0) {
+            progress.skip(relativePath + "：同目录中已存在同名正式档案");
+            return;
+        }
         String objectKey = "imported/" + progress.hall.getId() + "/" + progress.job.getBatchNo() + "/" + normalizedPath;
         StoredFile storedFile = fileStorageService.saveArchive(objectKey, input);
 
@@ -615,7 +675,7 @@ public class FinishedArchiveImportServiceImpl
         document.setTitle(title);
         document.setFolderName(firstPathSegment(folderPath));
         document.setFolderPath(folderPath);
-        document.setFileFormat(outputFormat(ext));
+        document.setFileFormat(outputFormat);
         document.setStoragePath(storedFile.relativePath());
         document.setPageCount(pageCount(storedFile.relativePath(), ext));
         document.setAiSummary("成品档案导入，保留原始文件名和目录层级。");

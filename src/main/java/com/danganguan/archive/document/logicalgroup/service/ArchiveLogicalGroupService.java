@@ -13,4 +13,6 @@ public interface ArchiveLogicalGroupService {
     List<ArchiveLogicalGroup> list(Long hallId, String folderPath);
 
     ArchiveLogicalGroupDetail detail(Long groupId);
+
+    void deleteGroupsContainingDocuments(List<Long> documentIds);
 }

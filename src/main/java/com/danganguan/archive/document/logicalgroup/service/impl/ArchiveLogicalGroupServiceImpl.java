@@ -116,6 +116,23 @@ public class ArchiveLogicalGroupServiceImpl extends ServiceImpl<ArchiveLogicalGr
         return new ArchiveLogicalGroupDetail(group, orderedDocuments);
     }
 
+    @Override
+    @Transactional
+    public void deleteGroupsContainingDocuments(List<Long> documentIds) {
+        if (documentIds == null || documentIds.isEmpty()) {
+            return;
+        }
+        List<ArchiveLogicalGroupMember> members = memberMapper.selectList(new LambdaQueryWrapper<ArchiveLogicalGroupMember>()
+                .in(ArchiveLogicalGroupMember::getArchiveDocumentId, documentIds));
+        if (members.isEmpty()) {
+            return;
+        }
+        List<Long> groupIds = members.stream().map(ArchiveLogicalGroupMember::getGroupId).distinct().toList();
+        memberMapper.delete(new LambdaQueryWrapper<ArchiveLogicalGroupMember>()
+                .in(ArchiveLogicalGroupMember::getGroupId, groupIds));
+        removeByIds(groupIds);
+    }
+
     private void clearFolderGroups(Long hallId, String folderPath) {
         List<ArchiveLogicalGroup> groups = lambdaQuery()
                 .eq(ArchiveLogicalGroup::getHallId, hallId)
