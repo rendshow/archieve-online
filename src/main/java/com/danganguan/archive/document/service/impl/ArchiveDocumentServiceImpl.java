@@ -10,6 +10,7 @@ import com.danganguan.archive.document.dto.UpdateArchiveDocumentNameRequest;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.mapper.ArchiveDocumentMapper;
+import com.danganguan.archive.document.logicalgroup.event.ArchiveLogicalGroupRefreshRequested;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import com.danganguan.archive.tag.entity.DocumentTag;
 import com.danganguan.archive.tag.enums.DocumentType;
@@ -22,12 +23,14 @@ import com.danganguan.archive.workspace.enums.WorkspaceDocumentStatus;
 import com.danganguan.archive.workspace.service.WorkspaceDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +39,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
     private final WorkspaceDocumentService workspaceDocumentService;
     private final ArchiveTaskService archiveTaskService;
     private final DocumentTagService documentTagService;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     @Override
     @Transactional
@@ -73,6 +77,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
         archiveDocument.setUpdatedAt(now);
         archiveDocument.setDeleted(0);
         save(archiveDocument);
+        requestLogicalGroupRefresh(archiveDocument, "工作区档案审核入库");
 
         copyWorkspaceTags(workspaceDocument.getId(), archiveDocument.getId());
 
@@ -126,6 +131,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
     }
 
     @Override
+    @Transactional
     public ArchiveDocument updateName(Long id, UpdateArchiveDocumentNameRequest request) {
         if (request.title() == null || request.title().isBlank()) {
             throw new BizException("档案名称不能为空");
@@ -137,6 +143,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
         document.setTitle(request.title().trim());
         document.setUpdatedAt(LocalDateTime.now());
         updateById(document);
+        requestLogicalGroupRefresh(document, "正式档案名称已修改");
         return document;
     }
 
@@ -151,6 +158,7 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
         document.setUpdatedAt(LocalDateTime.now());
         updateById(document);
         removeById(id);
+        requestLogicalGroupRefresh(document, "正式档案已删除");
     }
 
     private String buildArchiveNo(WorkspaceDocument workspaceDocument, LocalDateTime now) {
@@ -172,5 +180,18 @@ public class ArchiveDocumentServiceImpl extends ServiceImpl<ArchiveDocumentMappe
             archiveTag.setCreatedAt(LocalDateTime.now());
             documentTagService.save(archiveTag);
         }
+    }
+
+    private void requestLogicalGroupRefresh(ArchiveDocument document, String reason) {
+        applicationEventPublisher.publishEvent(new ArchiveLogicalGroupRefreshRequested(
+                document.getHallId(),
+                Set.of(folderPath(document)),
+                reason
+        ));
+    }
+
+    private String folderPath(ArchiveDocument document) {
+        String folderPath = document.getFolderPath();
+        return folderPath == null || folderPath.isBlank() ? document.getFolderName() : folderPath;
     }
 }

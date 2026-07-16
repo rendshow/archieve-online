@@ -135,6 +135,7 @@ public class ArchiveLogicalGroupServiceImpl extends ServiceImpl<ArchiveLogicalGr
     }
 
     @Override
+    @Transactional
     public void rebuildFolders(Long hallId, Set<String> folderPaths) {
         if (hallId == null || folderPaths == null || folderPaths.isEmpty()) {
             return;

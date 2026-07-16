@@ -8,6 +8,7 @@ import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.importing.FinishedArchiveImportMessage;
 import com.danganguan.archive.document.logicalgroup.service.ArchiveLogicalGroupService;
+import com.danganguan.archive.document.logicalgroup.event.ArchiveLogicalGroupRefreshRequested;
 import com.danganguan.archive.document.mapper.ArchiveDocumentMapper;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkUploadResult;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkedCompleteRequest;
@@ -34,6 +35,7 @@ import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -77,6 +79,7 @@ public class FinishedArchiveImportServiceImpl
     private final ArchiveStorageProperties properties;
     private final RabbitTemplate rabbitTemplate;
     private final ArchiveRealtimeEventPublisher eventPublisher;
+    private final ApplicationEventPublisher applicationEventPublisher;
     private final TransactionTemplate transactionTemplate;
 
     @Override
@@ -737,15 +740,11 @@ public class FinishedArchiveImportServiceImpl
             log.info("成品档案导入完成但没有新增文件，无需重建逻辑档案组，jobId={}", progress.job.getId());
             return;
         }
-        try {
-            log.info("成品档案导入完成，开始重建逻辑档案组，jobId={}, folderCount={}",
-                    progress.job.getId(), progress.importedFolderPaths.size());
-            archiveLogicalGroupService.rebuildFolders(progress.hall.getId(), progress.importedFolderPaths);
-        } catch (RuntimeException ex) {
-            // The import is already durable; grouping can be rebuilt later without affecting original files.
-            log.warn("成品档案导入后重建逻辑档案组失败，jobId={}", progress.job.getId(), ex);
-            publishImportJob(progress.job, "成品档案已导入，但逻辑档案组重建失败，可稍后重试");
-        }
+        applicationEventPublisher.publishEvent(new ArchiveLogicalGroupRefreshRequested(
+                progress.hall.getId(),
+                progress.importedFolderPaths,
+                "成品档案导入完成"
+        ));
     }
 
     private void fail(FinishedArchiveImportJob job, String message) {

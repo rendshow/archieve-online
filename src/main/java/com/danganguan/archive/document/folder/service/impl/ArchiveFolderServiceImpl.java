@@ -10,8 +10,10 @@ import com.danganguan.archive.document.folder.dto.MoveArchiveFolderRequest;
 import com.danganguan.archive.document.folder.dto.MoveArchiveFolderResult;
 import com.danganguan.archive.document.folder.service.ArchiveFolderService;
 import com.danganguan.archive.document.logicalgroup.service.ArchiveLogicalGroupService;
+import com.danganguan.archive.document.logicalgroup.event.ArchiveLogicalGroupRefreshRequested;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,7 +30,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ArchiveFolderServiceImpl implements ArchiveFolderService {
     private final ArchiveDocumentService archiveDocumentService;
-    private final ArchiveLogicalGroupService archiveLogicalGroupService;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     @Override
     public List<ArchiveFolderNode> tree(Long hallId) {
@@ -106,7 +108,7 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
         Set<String> affectedFolderPaths = new LinkedHashSet<>();
         affectedFolderPaths.add(sourceFolderPath);
         affectedFolderPaths.add(targetFolderPath);
-        archiveLogicalGroupService.rebuildFolders(document.getHallId(), affectedFolderPaths);
+        requestLogicalGroupRefresh(document.getHallId(), affectedFolderPaths, "正式档案已移动");
         return document;
     }
 
@@ -150,7 +152,7 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
             affectedFolderPaths.add(oldPath);
             affectedFolderPaths.add(newPath);
         }
-        archiveLogicalGroupService.rebuildFolders(request.hallId(), affectedFolderPaths);
+        requestLogicalGroupRefresh(request.hallId(), affectedFolderPaths, "正式档案目录已移动");
 
         return new MoveArchiveFolderResult(request.hallId(), sourceFolderPath, targetFolderPath, documents.size());
     }
@@ -230,5 +232,9 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
         for (ArchiveFolderNode node : nodes) {
             sortTree(node.getChildren());
         }
+    }
+
+    private void requestLogicalGroupRefresh(Long hallId, Set<String> folderPaths, String reason) {
+        applicationEventPublisher.publishEvent(new ArchiveLogicalGroupRefreshRequested(hallId, folderPaths, reason));
     }
 }
