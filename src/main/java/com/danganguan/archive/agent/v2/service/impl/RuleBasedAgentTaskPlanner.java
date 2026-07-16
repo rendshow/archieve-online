@@ -37,6 +37,11 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
                     clientContext, requestedFields(text), AgentEvidenceRequirement.PAGE_EVIDENCE_REQUIRED, true,
                     "用户要求检查档案之间或文件名与页内字段之间的一致性。", null);
         }
+        if (containsAny(text, "找", "查", "搜索", "定位", "有没有", "是否有")) {
+            return task(AgentTaskIntent.LOCATE_DOCUMENT, "ARCHIVE_LOCATE", AgentIntent.SEARCH_ARCHIVE,
+                    clientContext, List.of("档案定位"), AgentEvidenceRequirement.METADATA_ALLOWED, false,
+                    "用户提供线索以定位一个或多个档案。", null);
+        }
         if (containsAny(text, "成绩是多少", "成绩多少", "多少分", "什么时候", "几月份", "哪些信息", "记录了什么",
                 "课程", "导师", "学号", "学位证", "毕业证", "成绩单")) {
             return task(AgentTaskIntent.ANSWER_FROM_DOCUMENTS, "DOCUMENT_EVIDENCE_QUERY", AgentIntent.DISCUSS_ARCHIVE_INFO,
@@ -47,11 +52,6 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
             return task(AgentTaskIntent.SUMMARIZE_SCOPE, "SCOPE_AGGREGATE", AgentIntent.SUMMARIZE_SCOPE,
                     clientContext, requestedFields(text), AgentEvidenceRequirement.SCOPE_STATISTICS_REQUIRED, true,
                     "用户要求对当前范围内的档案或已提取事实做聚合。", null);
-        }
-        if (containsAny(text, "找", "查", "搜索", "定位", "有没有", "是否有")) {
-            return task(AgentTaskIntent.LOCATE_DOCUMENT, "ARCHIVE_LOCATE", AgentIntent.SEARCH_ARCHIVE,
-                    clientContext, List.of("档案定位"), AgentEvidenceRequirement.METADATA_ALLOWED, false,
-                    "用户提供线索以定位一个或多个档案。", null);
         }
         return clarify(clientContext, "我还不能确定你是要定位档案、根据档案内容问答、汇总当前范围，还是做治理核验。请补充目标对象和想得到的结果。");
     }

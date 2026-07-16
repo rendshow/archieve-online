@@ -7,6 +7,7 @@ import com.danganguan.archive.agent.v2.enums.AgentTaskIntent;
 import com.danganguan.archive.agent.v2.service.AgentTaskPlanner;
 import com.danganguan.archive.agent.v2.service.AgentV2ExecutionService;
 import com.danganguan.archive.agent.v2.tool.DocumentEvidenceQueryTool;
+import com.danganguan.archive.agent.v2.tool.ArchiveLocateTool;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +18,7 @@ import java.util.List;
 public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
     private final AgentTaskPlanner agentTaskPlanner;
     private final DocumentEvidenceQueryTool documentEvidenceQueryTool;
+    private final ArchiveLocateTool archiveLocateTool;
 
     @Override
     public AgentToolExecutionResult execute(AgentChatRequest request) {
@@ -25,12 +27,17 @@ public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
         if (task.intent() == AgentTaskIntent.ANSWER_FROM_DOCUMENTS) {
             DocumentEvidenceQueryTool.QueryResult result = documentEvidenceQueryTool.query(safeRequest.message(), task.scope());
             return new AgentToolExecutionResult(task, result.evidence().isEmpty() ? "INSUFFICIENT_EVIDENCE" : "COMPLETED",
-                    result.answer(), result.evidence());
+                    result.answer(), List.of(), result.evidence());
+        }
+        if (task.intent() == AgentTaskIntent.LOCATE_DOCUMENT) {
+            ArchiveLocateTool.LocateResult result = archiveLocateTool.locate(safeRequest.message(), task.scope());
+            return new AgentToolExecutionResult(task, result.documents().isEmpty() ? "NO_MATCH" : "COMPLETED",
+                    result.answer(), result.documents(), result.evidence());
         }
         if (task.intent() == AgentTaskIntent.CLARIFY || task.intent() == AgentTaskIntent.OUT_OF_SCOPE) {
-            return new AgentToolExecutionResult(task, task.intent().name(), task.clarification(), List.of());
+            return new AgentToolExecutionResult(task, task.intent().name(), task.clarification(), List.of(), List.of());
         }
         return new AgentToolExecutionResult(task, "NOT_IMPLEMENTED",
-                "该任务已被识别为“%s”，但对应工具尚未接入执行链路，因此不会生成推测性答案。".formatted(task.intent()), List.of());
+                "该任务已被识别为“%s”，但对应工具尚未接入执行链路，因此不会生成推测性答案。".formatted(task.intent()), List.of(), List.of());
     }
 }

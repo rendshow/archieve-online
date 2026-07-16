@@ -37,6 +37,14 @@ class RuleBasedAgentTaskPlannerTest {
         assertThat(task.clarification()).contains("本页面范围");
     }
 
+    @Test
+    void shouldPreferLocateForFindDocumentRequest() {
+        var task = planner.plan("帮我找韩雪的成绩单", folderContext());
+
+        assertThat(task.intent()).isEqualTo(AgentTaskIntent.LOCATE_DOCUMENT);
+        assertThat(task.toolName()).isEqualTo("ARCHIVE_LOCATE");
+    }
+
     private AgentClientContext folderContext() {
         return new AgentClientContext("ARCHIVE_FOLDER", 1L, "西区/测试", null, null, null, null);
     }
