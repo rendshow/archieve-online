@@ -5,12 +5,11 @@ import com.danganguan.archive.document.fact.dto.ArchiveFactEvidence;
 
 import java.util.List;
 
-public record AgentToolExecutionResult(
-        AgentTaskSpec task,
-        String status,
-        String answer,
+public record AgentGovernanceFinding(
+        String type,
+        String level,
+        String message,
         List<AgentDocumentReference> documents,
-        List<ArchiveFactEvidence> evidence,
-        List<AgentGovernanceFinding> findings
+        List<ArchiveFactEvidence> evidence
 ) {
 }
