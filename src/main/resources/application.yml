@@ -38,6 +38,8 @@ mybatis-plus:
 
 archive:
   storage-root: storage
+  legacy-grouping:
+    root: ${ARCHIVE_LEGACY_GROUPING_ROOT:}
   storage:
     provider: ${ARCHIVE_STORAGE_PROVIDER:local}
     minio:

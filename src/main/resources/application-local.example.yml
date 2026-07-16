@@ -1,4 +1,7 @@
 archive:
+  legacy-grouping:
+    # 仅允许归组预览读取此目录及其子目录；不上传、不移动、不修改原文件。
+    root: D:/Documents/档案馆
   storage:
     # 可选：local / minio
     provider: local
