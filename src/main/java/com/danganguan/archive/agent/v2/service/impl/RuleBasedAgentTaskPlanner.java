@@ -48,7 +48,7 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
                     clientContext, requestedFields(text), AgentEvidenceRequirement.PAGE_EVIDENCE_REQUIRED, true,
                     "用户要求根据档案内容回答具体事实，必须给出页级 OCR 证据。", null);
         }
-        if (containsAny(text, "多少", "哪些学生", "名单", "统计", "汇总", "年份分布", "哪几年", "有哪几年")) {
+        if (containsAny(text, "多少", "哪些学生", "名单", "统计", "汇总", "年份分布", "材料分布", "材料构成", "材料类型", "哪几年", "有哪几年")) {
             return task(AgentTaskIntent.SUMMARIZE_SCOPE, "SCOPE_AGGREGATE", AgentIntent.SUMMARIZE_SCOPE,
                     clientContext, requestedFields(text), AgentEvidenceRequirement.SCOPE_STATISTICS_REQUIRED, true,
                     "用户要求对当前范围内的档案或已提取事实做聚合。", null);

@@ -45,6 +45,14 @@ class RuleBasedAgentTaskPlannerTest {
         assertThat(task.toolName()).isEqualTo("ARCHIVE_LOCATE");
     }
 
+    @Test
+    void shouldRouteMaterialDistributionToScopeAggregate() {
+        var task = planner.plan("当前文件夹的材料分布", folderContext());
+
+        assertThat(task.intent()).isEqualTo(AgentTaskIntent.SUMMARIZE_SCOPE);
+        assertThat(task.toolName()).isEqualTo("SCOPE_AGGREGATE");
+    }
+
     private AgentClientContext folderContext() {
         return new AgentClientContext("ARCHIVE_FOLDER", 1L, "西区/测试", null, null, null, null);
     }

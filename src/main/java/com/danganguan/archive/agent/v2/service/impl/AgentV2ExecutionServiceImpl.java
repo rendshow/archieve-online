@@ -8,6 +8,7 @@ import com.danganguan.archive.agent.v2.service.AgentTaskPlanner;
 import com.danganguan.archive.agent.v2.service.AgentV2ExecutionService;
 import com.danganguan.archive.agent.v2.tool.DocumentEvidenceQueryTool;
 import com.danganguan.archive.agent.v2.tool.ArchiveLocateTool;
+import com.danganguan.archive.agent.v2.tool.ScopeAggregateTool;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +20,7 @@ public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
     private final AgentTaskPlanner agentTaskPlanner;
     private final DocumentEvidenceQueryTool documentEvidenceQueryTool;
     private final ArchiveLocateTool archiveLocateTool;
+    private final ScopeAggregateTool scopeAggregateTool;
 
     @Override
     public AgentToolExecutionResult execute(AgentChatRequest request) {
@@ -33,6 +35,10 @@ public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
             ArchiveLocateTool.LocateResult result = archiveLocateTool.locate(safeRequest.message(), task.scope());
             return new AgentToolExecutionResult(task, result.documents().isEmpty() ? "NO_MATCH" : "COMPLETED",
                     result.answer(), result.documents(), result.evidence());
+        }
+        if (task.intent() == AgentTaskIntent.SUMMARIZE_SCOPE) {
+            ScopeAggregateTool.AggregateResult result = scopeAggregateTool.aggregate(safeRequest.message(), task.scope());
+            return new AgentToolExecutionResult(task, "COMPLETED", result.answer(), result.documents(), result.evidence());
         }
         if (task.intent() == AgentTaskIntent.CLARIFY || task.intent() == AgentTaskIntent.OUT_OF_SCOPE) {
             return new AgentToolExecutionResult(task, task.intent().name(), task.clarification(), List.of(), List.of());
