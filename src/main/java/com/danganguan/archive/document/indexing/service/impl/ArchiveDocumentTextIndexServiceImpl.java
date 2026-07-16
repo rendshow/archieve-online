@@ -2,9 +2,6 @@ package com.danganguan.archive.document.indexing.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeRequest;
-import com.danganguan.archive.ai.analysis.dto.DocumentAnalyzeResult;
-import com.danganguan.archive.ai.analysis.service.DocumentAnalyzeService;
 import com.danganguan.archive.common.config.ArchiveStorageProperties;
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.entity.ArchiveDocument;
@@ -16,7 +13,8 @@ import com.danganguan.archive.document.indexing.entity.ArchiveTextIndexJob;
 import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexJobStatus;
 import com.danganguan.archive.document.indexing.mapper.ArchiveTextIndexJobMapper;
 import com.danganguan.archive.document.indexing.service.ArchiveDocumentTextIndexService;
-import com.danganguan.archive.document.process.ProcessedFileResult;
+import com.danganguan.archive.document.page.dto.ArchiveDocumentPageIndexResult;
+import com.danganguan.archive.document.page.service.ArchiveDocumentPageIndexService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import com.danganguan.archive.event.ArchiveRealtimeEvent;
 import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
@@ -39,7 +37,7 @@ public class ArchiveDocumentTextIndexServiceImpl
     private static final int MAX_BATCH_SIZE = 50;
 
     private final ArchiveDocumentService archiveDocumentService;
-    private final DocumentAnalyzeService documentAnalyzeService;
+    private final ArchiveDocumentPageIndexService archiveDocumentPageIndexService;
     private final ArchiveStorageProperties properties;
     private final RabbitTemplate rabbitTemplate;
     private final ArchiveRealtimeEventPublisher eventPublisher;
@@ -50,9 +48,10 @@ public class ArchiveDocumentTextIndexServiceImpl
         if (document == null) {
             throw new BizException("正式档案不存在");
         }
-        DocumentAnalyzeResult result = analyze(document);
-        document.setOcrText(blankToNull(result.extractedText()));
-        document.setAiSummary(firstNonBlank(result.summary(), document.getAiSummary()));
+        ArchiveDocumentPageIndexResult result = archiveDocumentPageIndexService.rebuild(document);
+        document.setOcrText(blankToNull(result.mergedText()));
+        document.setPageCount(result.pageCount());
+        document.setAiSummary(firstNonBlank(document.getAiSummary(), "已完成页级 OCR 索引。"));
         document.setUpdatedAt(LocalDateTime.now());
         archiveDocumentService.updateById(document);
         eventPublisher.publish(ArchiveRealtimeEvent.archiveDocumentIndexed(
@@ -194,16 +193,6 @@ public class ArchiveDocumentTextIndexServiceImpl
             return;
         }
         submit(job.getId());
-    }
-
-    private DocumentAnalyzeResult analyze(ArchiveDocument document) {
-        ProcessedFileResult processedFile = new ProcessedFileResult(
-                document.getStoragePath(),
-                document.getFileFormat(),
-                document.getPageCount(),
-                ""
-        );
-        return documentAnalyzeService.analyze(new DocumentAnalyzeRequest(null, List.of(), processedFile));
     }
 
     private int countMissing(Long hallId) {

@@ -145,6 +145,20 @@ CREATE TABLE IF NOT EXISTS archive_document (
   INDEX idx_archive_document_archived_at (archived_at)
 );
 
+CREATE TABLE IF NOT EXISTS archive_document_page (
+  id BIGINT PRIMARY KEY,
+  archive_document_id BIGINT NOT NULL,
+  page_no INT NOT NULL,
+  ocr_text LONGTEXT,
+  ocr_confidence DECIMAL(5,4),
+  ocr_engine VARCHAR(64),
+  ocr_reason VARCHAR(1000),
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  UNIQUE KEY uk_archive_document_page (archive_document_id, page_no),
+  INDEX idx_archive_document_page_document (archive_document_id)
+);
+
 CREATE TABLE IF NOT EXISTS archive_logical_group (
   id BIGINT PRIMARY KEY,
   hall_id BIGINT NOT NULL,
