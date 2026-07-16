@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Tag(name = "Agent V2 任务规划", description = "将用户问题规划为受控只读工具任务，不执行写操作")
 @RestController
@@ -30,5 +32,11 @@ public class AgentTaskSpecController {
     @PostMapping("/api/agent/v2/execute")
     public Result<AgentToolExecutionResult> execute(@RequestBody AgentChatRequest request) {
         return Result.ok(agentV2ExecutionService.execute(request));
+    }
+
+    @Operation(summary = "流式执行 Agent V2 只读任务", description = "SSE 事件依次为 meta、delta、done 或 error；done 携带完整证据、档案引用与治理发现")
+    @PostMapping(value = "/api/agent/v2/execute/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@RequestBody AgentChatRequest request) {
+        return agentV2ExecutionService.stream(request);
     }
 }

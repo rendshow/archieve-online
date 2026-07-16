@@ -13,12 +13,17 @@ import com.danganguan.archive.agent.v2.tool.ScopeAggregateTool;
 import com.danganguan.archive.agent.v2.tool.GovernanceInspectTool;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.IOException;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
 public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
+    private static final long STREAM_TIMEOUT_MILLIS = 120_000L;
     private final AgentTaskPlanner agentTaskPlanner;
     private final DocumentEvidenceQueryTool documentEvidenceQueryTool;
     private final ArchiveLocateTool archiveLocateTool;
@@ -59,9 +64,70 @@ public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
                 "该任务已被识别为“%s”，但对应工具尚未接入执行链路，因此不会生成推测性答案。".formatted(task.intent()), List.of(), List.of(), List.of());
     }
 
+    @Override
+    public SseEmitter stream(AgentChatRequest request) {
+        SseEmitter emitter = new SseEmitter(STREAM_TIMEOUT_MILLIS);
+        CompletableFuture.runAsync(() -> {
+            try {
+                AgentToolExecutionResult result = execute(request);
+                sendEvent(emitter, "meta", Map.of(
+                        "intent", result.task().intent(),
+                        "toolName", result.task().toolName(),
+                        "scope", result.task().scope(),
+                        "status", result.status(),
+                        "answerSource", result.answerSource()
+                ));
+                emitBySegment(result.answer(), segment -> sendEvent(emitter, "delta", segment));
+                sendEvent(emitter, "done", result);
+                emitter.complete();
+            } catch (Exception ex) {
+                try {
+                    sendEvent(emitter, "error", Map.of("message", "Agent V2 执行失败：" + safeMessage(ex)));
+                } catch (IOException ignored) {
+                    // Client may have closed the stream.
+                }
+                emitter.completeWithError(ex);
+            }
+        });
+        return emitter;
+    }
+
     private AgentToolExecutionResult compose(String userMessage, AgentToolExecutionResult rawResult) {
         AgentV2AnswerComposer.ComposeResult composed = agentV2AnswerComposer.compose(userMessage, rawResult);
         return new AgentToolExecutionResult(rawResult.task(), rawResult.status(), composed.source(), composed.answer(),
                 rawResult.documents(), rawResult.evidence(), rawResult.findings());
+    }
+
+    private void sendEvent(SseEmitter emitter, String name, Object data) throws IOException {
+        emitter.send(SseEmitter.event().name(name).data(data));
+    }
+
+    private void emitBySegment(String answer, ThrowingConsumer<String> consumer) throws IOException {
+        if (answer == null || answer.isBlank()) {
+            return;
+        }
+        StringBuilder segment = new StringBuilder();
+        for (int index = 0; index < answer.length(); index++) {
+            char character = answer.charAt(index);
+            segment.append(character);
+            if ("。；！？\n".indexOf(character) >= 0 || segment.length() >= 30) {
+                consumer.accept(segment.toString());
+                segment.setLength(0);
+            }
+        }
+        if (!segment.isEmpty()) {
+            consumer.accept(segment.toString());
+        }
+    }
+
+    private String safeMessage(Exception exception) {
+        return exception.getMessage() == null || exception.getMessage().isBlank()
+                ? exception.getClass().getSimpleName()
+                : exception.getMessage();
+    }
+
+    @FunctionalInterface
+    private interface ThrowingConsumer<T> {
+        void accept(T value) throws IOException;
     }
 }
