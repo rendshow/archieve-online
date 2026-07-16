@@ -29,6 +29,9 @@ class ArchiveLogicalGroupRuleEngineTest {
         assertEquals(2, personImages.documents().size());
         assertEquals("99010199-1万泰金", personImages.documents().getFirst().getTitle());
         assertFalse(personImages.requiresReview());
+        assertEquals("N2006-JX12•13•21-1徐春雨", groups.stream()
+                .filter(group -> group.documents().getFirst().getFileFormat() == OutputFormat.PDF)
+                .findFirst().orElseThrow().title());
         assertEquals(2, groups.stream().filter(group -> group.groupType() == ArchiveLogicalGroupType.FOLDER_CATALOG)
                 .findFirst().orElseThrow().documents().size());
     }

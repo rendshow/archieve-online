@@ -34,7 +34,7 @@ public final class ArchiveLogicalGroupRuleEngine {
             if (document.getFileFormat() == OutputFormat.PDF) {
                 ParsedName parsed = parseName(title);
                 result.add(candidate("PDF:" + document.getId(), ArchiveLogicalGroupType.PERSON_RECORD,
-                        titleFor(parsed, title), parsed.personName(), parsed.archiveNo(), ArchiveLogicalGroupConfidence.HIGH,
+                        title, parsed.personName(), parsed.archiveNo(), ArchiveLogicalGroupConfidence.HIGH,
                         "PDF_ONE_FILE_ONE_PERSON", false, List.of(document)));
                 continue;
             }
