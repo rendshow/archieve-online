@@ -7,6 +7,7 @@ import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.logicalgroup.dto.ArchiveLogicalGroupDetail;
 import com.danganguan.archive.document.logicalgroup.dto.ArchiveLogicalGroupRebuildResult;
+import com.danganguan.archive.document.logicalgroup.dto.ArchiveLogicalGroupSummary;
 import com.danganguan.archive.document.logicalgroup.dto.RebuildArchiveLogicalGroupsRequest;
 import com.danganguan.archive.document.logicalgroup.entity.ArchiveLogicalGroup;
 import com.danganguan.archive.document.logicalgroup.entity.ArchiveLogicalGroupMember;
@@ -93,6 +94,34 @@ public class ArchiveLogicalGroupServiceImpl extends ServiceImpl<ArchiveLogicalGr
                 .eq(ArchiveLogicalGroup::getFolderPath, normalizeFolderPath(folderPath))
                 .orderByAsc(ArchiveLogicalGroup::getTitle)
                 .list();
+    }
+
+    @Override
+    public List<ArchiveLogicalGroupSummary> listSummaries(Long hallId, String folderPath) {
+        List<ArchiveLogicalGroup> groups = list(hallId, folderPath);
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, Long> memberCounts = memberMapper.selectList(new LambdaQueryWrapper<ArchiveLogicalGroupMember>()
+                        .in(ArchiveLogicalGroupMember::getGroupId, groups.stream().map(ArchiveLogicalGroup::getId).toList()))
+                .stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        ArchiveLogicalGroupMember::getGroupId,
+                        java.util.stream.Collectors.counting()
+                ));
+        return groups.stream()
+                .map(group -> new ArchiveLogicalGroupSummary(
+                        group.getId(),
+                        group.getTitle(),
+                        group.getPersonName(),
+                        group.getArchiveNo(),
+                        group.getGroupType(),
+                        group.getConfidence(),
+                        group.getGroupingRule(),
+                        group.getRequiresReview(),
+                        Math.toIntExact(memberCounts.getOrDefault(group.getId(), 0L))
+                ))
+                .toList();
     }
 
     @Override

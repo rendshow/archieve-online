@@ -11,6 +11,7 @@ import com.danganguan.archive.document.folder.dto.MoveArchiveFolderResult;
 import com.danganguan.archive.document.folder.service.ArchiveFolderService;
 import com.danganguan.archive.document.logicalgroup.service.ArchiveLogicalGroupService;
 import com.danganguan.archive.document.logicalgroup.event.ArchiveLogicalGroupRefreshRequested;
+import com.danganguan.archive.document.logicalgroup.service.ArchiveLogicalGroupService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,6 +31,7 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ArchiveFolderServiceImpl implements ArchiveFolderService {
     private final ArchiveDocumentService archiveDocumentService;
+    private final ArchiveLogicalGroupService archiveLogicalGroupService;
     private final ApplicationEventPublisher applicationEventPublisher;
 
     @Override
@@ -86,7 +88,13 @@ public class ArchiveFolderServiceImpl implements ArchiveFolderService {
         List<ArchiveFolderNode> folderList = new ArrayList<>(folders.values());
         folderList.sort(Comparator.comparing(ArchiveFolderNode::getName));
         currentDocuments.sort(Comparator.comparing(ArchiveDocument::getTitle));
-        return new ArchiveFolderChildren(hallId, normalizedPath, folderList, currentDocuments);
+        return new ArchiveFolderChildren(
+                hallId,
+                normalizedPath,
+                folderList,
+                currentDocuments,
+                hallId == null ? List.of() : archiveLogicalGroupService.listSummaries(hallId, normalizedPath)
+        );
     }
 
     @Override
