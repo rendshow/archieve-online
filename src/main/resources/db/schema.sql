@@ -159,6 +159,23 @@ CREATE TABLE IF NOT EXISTS archive_document_page (
   INDEX idx_archive_document_page_document (archive_document_id)
 );
 
+CREATE TABLE IF NOT EXISTS archive_extracted_fact (
+  id BIGINT PRIMARY KEY,
+  archive_document_id BIGINT NOT NULL,
+  archive_document_page_id BIGINT NOT NULL,
+  fact_type VARCHAR(64) NOT NULL,
+  fact_key VARCHAR(255),
+  fact_value VARCHAR(500) NOT NULL,
+  normalized_value VARCHAR(500),
+  confidence DECIMAL(5,4) NOT NULL,
+  evidence_text VARCHAR(1000),
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  INDEX idx_archive_extracted_fact_document (archive_document_id),
+  INDEX idx_archive_extracted_fact_type_value (fact_type, normalized_value(191)),
+  INDEX idx_archive_extracted_fact_page (archive_document_page_id)
+);
+
 CREATE TABLE IF NOT EXISTS archive_logical_group (
   id BIGINT PRIMARY KEY,
   hall_id BIGINT NOT NULL,
