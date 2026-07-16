@@ -74,6 +74,15 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
     }
 
     @Override
+    public void deleteArchive(String relativePath) {
+        try {
+            Files.deleteIfExists(resolve(relativePath));
+        } catch (IOException ex) {
+            throw new BizException("删除正式档案文件失败：" + ex.getMessage());
+        }
+    }
+
+    @Override
     public Path resolve(String relativePath) {
         Path root = storageRoot();
         Path path = root.resolve(relativePath).normalize();

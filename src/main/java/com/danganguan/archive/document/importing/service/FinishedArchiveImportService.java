@@ -1,6 +1,7 @@
 package com.danganguan.archive.document.importing.service;
 
 import com.danganguan.archive.document.importing.dto.FinishedArchiveImportResult;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveImportCleanupResult;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkUploadResult;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkedCompleteRequest;
 import com.danganguan.archive.document.importing.entity.FinishedArchiveImportJob;
@@ -23,4 +24,6 @@ public interface FinishedArchiveImportService {
     FinishedArchiveImportJob getImportJob(Long jobId);
 
     void processJob(Long jobId);
+
+    FinishedArchiveImportCleanupResult deleteAllImportedArchives();
 }

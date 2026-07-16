@@ -1,6 +1,7 @@
 package com.danganguan.archive.document.importing.service.impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveImportCleanupResult;
 import com.danganguan.archive.common.config.ArchiveStorageProperties;
 import com.danganguan.archive.common.exception.BizException;
 import com.danganguan.archive.document.entity.ArchiveDocument;
@@ -21,12 +22,16 @@ import com.danganguan.archive.file.storage.StoredFile;
 import com.danganguan.archive.hall.entity.ArchiveHall;
 import com.danganguan.archive.hall.service.ArchiveHallService;
 import com.danganguan.archive.task.enums.OutputFormat;
+import com.danganguan.archive.tag.entity.DocumentTag;
+import com.danganguan.archive.tag.enums.DocumentType;
+import com.danganguan.archive.tag.service.DocumentTagService;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.compress.archivers.sevenz.SevenZArchiveEntry;
 import org.apache.commons.compress.archivers.sevenz.SevenZFile;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.ByteArrayInputStream;
@@ -59,6 +64,7 @@ public class FinishedArchiveImportServiceImpl
 
     private final ArchiveHallService archiveHallService;
     private final ArchiveDocumentService archiveDocumentService;
+    private final DocumentTagService documentTagService;
     private final FileStorageService fileStorageService;
     private final ArchiveStorageProperties properties;
     private final RabbitTemplate rabbitTemplate;
@@ -178,6 +184,51 @@ public class FinishedArchiveImportServiceImpl
             throw new BizException("成品档案导入任务不存在");
         }
         return job;
+    }
+
+    @Override
+    @Transactional
+    public FinishedArchiveImportCleanupResult deleteAllImportedArchives() {
+        List<ArchiveDocument> documents = archiveDocumentService.lambdaQuery()
+                .isNull(ArchiveDocument::getTaskId)
+                .isNull(ArchiveDocument::getWorkspaceDocumentId)
+                .likeRight(ArchiveDocument::getArchiveNo, "IMP")
+                .likeRight(ArchiveDocument::getStoragePath, "imported/")
+                .list();
+        List<Long> documentIds = documents.stream().map(ArchiveDocument::getId).toList();
+
+        // Delete objects first. A storage failure leaves database references intact for a later retry.
+        for (ArchiveDocument document : documents) {
+            fileStorageService.deleteArchive(document.getStoragePath());
+        }
+
+        int deletedTagCount = 0;
+        if (!documentIds.isEmpty()) {
+            deletedTagCount = Math.toIntExact(documentTagService.lambdaQuery()
+                    .eq(DocumentTag::getDocumentType, DocumentType.ARCHIVE)
+                    .in(DocumentTag::getDocumentId, documentIds)
+                    .count());
+            documentTagService.lambdaUpdate()
+                    .eq(DocumentTag::getDocumentType, DocumentType.ARCHIVE)
+                    .in(DocumentTag::getDocumentId, documentIds)
+                    .remove();
+            archiveDocumentService.removeByIds(documentIds);
+        }
+
+        int deletedImportJobCount = Math.toIntExact(count());
+        remove(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<FinishedArchiveImportJob>()
+                .isNotNull(FinishedArchiveImportJob::getId));
+        try {
+            deleteDirectoryIfExists(storageRoot().resolve("import-jobs"));
+        } catch (IOException ex) {
+            throw new BizException("删除导入暂存文件失败：" + ex.getMessage());
+        }
+        return new FinishedArchiveImportCleanupResult(
+                documents.size(),
+                documents.size(),
+                deletedTagCount,
+                deletedImportJobCount
+        );
     }
 
     @Override

@@ -10,6 +10,10 @@ public interface FileStorageService {
 
     StoredFile saveArchive(String objectKey, InputStream input);
 
+    default void deleteArchive(String relativePath) {
+        throw new UnsupportedOperationException("当前存储实现不支持删除正式档案");
+    }
+
     Path resolve(String relativePath);
 
     Path prepareWorkspaceFile(Long taskId, String filename);

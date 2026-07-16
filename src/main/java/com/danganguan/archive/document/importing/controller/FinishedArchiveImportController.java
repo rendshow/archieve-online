@@ -2,6 +2,7 @@ package com.danganguan.archive.document.importing.controller;
 
 import com.danganguan.archive.common.response.Result;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkUploadResult;
+import com.danganguan.archive.document.importing.dto.FinishedArchiveImportCleanupResult;
 import com.danganguan.archive.document.importing.dto.FinishedArchiveChunkedCompleteRequest;
 import com.danganguan.archive.document.importing.entity.FinishedArchiveImportJob;
 import com.danganguan.archive.document.importing.service.FinishedArchiveImportService;
@@ -9,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -66,5 +68,11 @@ public class FinishedArchiveImportController {
     @GetMapping("/api/archive-imports/finished/jobs/{jobId}")
     public Result<FinishedArchiveImportJob> getImportJob(@PathVariable Long jobId) {
         return Result.ok(finishedArchiveImportService.getImportJob(jobId));
+    }
+
+    @Operation(summary = "清空已导入旧档案", description = "仅删除成品档案导入产生的 IMP 档案、关联标签、对象存储文件和导入任务；不影响工作区任务及其确认入库档案")
+    @DeleteMapping("/api/archive-imports/finished")
+    public Result<FinishedArchiveImportCleanupResult> deleteAllImportedArchives() {
+        return Result.ok(finishedArchiveImportService.deleteAllImportedArchives());
     }
 }

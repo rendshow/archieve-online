@@ -9,6 +9,7 @@ import io.minio.GetObjectArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -82,6 +83,20 @@ public class MinioFileStorageServiceImpl implements FileStorageService {
             return new StoredFile(normalizedKey, HexFormat.of().formatHex(digest.digest()), Files.size(cachePath));
         } catch (IOException | NoSuchAlgorithmException ex) {
             throw new BizException("保存正式档案到 MinIO 失败：" + ex.getMessage());
+        }
+    }
+
+    @Override
+    public void deleteArchive(String relativePath) {
+        String objectKey = normalizeObjectKey(relativePath);
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder()
+                    .bucket(bucket())
+                    .object(objectKey)
+                    .build());
+            Files.deleteIfExists(cachePath(objectKey));
+        } catch (Exception ex) {
+            throw new BizException("从 MinIO 删除正式档案失败：" + ex.getMessage());
         }
     }
 
