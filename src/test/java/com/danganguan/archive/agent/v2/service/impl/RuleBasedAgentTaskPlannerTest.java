@@ -53,6 +53,21 @@ class RuleBasedAgentTaskPlannerTest {
         assertThat(task.toolName()).isEqualTo("SCOPE_AGGREGATE");
     }
 
+    @Test
+    void shouldRouteGraduationYearQuestionToContentAnswer() {
+        var task = planner.plan("韩雪哪一年毕业的", folderContext());
+
+        assertThat(task.intent()).isEqualTo(AgentTaskIntent.ANSWER_FROM_DOCUMENTS);
+        assertThat(task.toolName()).isEqualTo("DOCUMENT_EVIDENCE_QUERY");
+    }
+
+    @Test
+    void shouldRouteWhoQuestionToContentAnswer() {
+        var task = planner.plan("韩雪是谁？", folderContext());
+
+        assertThat(task.intent()).isEqualTo(AgentTaskIntent.ANSWER_FROM_DOCUMENTS);
+    }
+
     private AgentClientContext folderContext() {
         return new AgentClientContext("ARCHIVE_FOLDER", 1L, "西区/测试", null, null, null, null);
     }

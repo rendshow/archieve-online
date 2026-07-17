@@ -42,16 +42,16 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
                     clientContext, List.of("档案定位"), AgentEvidenceRequirement.METADATA_ALLOWED, false,
                     "用户提供线索以定位一个或多个档案。", null);
         }
-        if (containsAny(text, "成绩是多少", "成绩多少", "多少分", "什么时候", "几月份", "哪些信息", "记录了什么",
+        if (isScopeAggregateQuestion(text)) {
+            return task(AgentTaskIntent.SUMMARIZE_SCOPE, "SCOPE_AGGREGATE", AgentIntent.SUMMARIZE_SCOPE,
+                    clientContext, requestedFields(text), AgentEvidenceRequirement.SCOPE_STATISTICS_REQUIRED, true,
+                    "用户要求对当前范围内的档案或已提取事实做聚合。", null);
+        }
+        if (containsAny(text, "成绩是多少", "成绩多少", "多少分", "什么时候", "几月份", "哪一年", "哪年", "毕业", "谁", "哪些信息", "记录了什么",
                 "课程", "导师", "学号", "学位证", "毕业证", "成绩单")) {
             return task(AgentTaskIntent.ANSWER_FROM_DOCUMENTS, "DOCUMENT_EVIDENCE_QUERY", AgentIntent.DISCUSS_ARCHIVE_INFO,
                     clientContext, requestedFields(text), AgentEvidenceRequirement.PAGE_EVIDENCE_REQUIRED, true,
                     "用户要求根据档案内容回答具体事实，必须给出页级 OCR 证据。", null);
-        }
-        if (containsAny(text, "多少", "哪些学生", "名单", "统计", "汇总", "年份分布", "材料分布", "材料构成", "材料类型", "哪几年", "有哪几年")) {
-            return task(AgentTaskIntent.SUMMARIZE_SCOPE, "SCOPE_AGGREGATE", AgentIntent.SUMMARIZE_SCOPE,
-                    clientContext, requestedFields(text), AgentEvidenceRequirement.SCOPE_STATISTICS_REQUIRED, true,
-                    "用户要求对当前范围内的档案或已提取事实做聚合。", null);
         }
         return clarify(clientContext, "我还不能确定你是要定位档案、根据档案内容问答、汇总当前范围，还是做治理核验。请补充目标对象和想得到的结果。");
     }
@@ -84,6 +84,14 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
     private boolean isOutOfScopeRequest(String text, AgentClientContext context) {
         return context != null && context.folderPath() != null && !context.folderPath().isBlank()
                 && containsAny(text, "全校", "全馆", "所有馆", "全部档案", "整个学校");
+    }
+
+    private boolean isScopeAggregateQuestion(String text) {
+        if (containsAny(text, "统计", "汇总", "多少文件", "多少个文件", "文件数", "文件数量", "多少档案", "多少份档案", "档案数", "档案数量",
+                "哪些学生", "学生名单", "材料分布", "材料构成", "材料类型", "年份分布", "哪几年", "有哪几年")) {
+            return true;
+        }
+        return containsAny(text, "当前文件夹", "当前目录") && containsAny(text, "多少", "哪些", "哪年");
     }
 
     private boolean containsAny(String text, String... terms) {

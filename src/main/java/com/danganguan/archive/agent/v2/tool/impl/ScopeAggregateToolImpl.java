@@ -71,7 +71,8 @@ public class ScopeAggregateToolImpl implements ScopeAggregateTool {
         if (truncated) {
             coverage += "范围超过单次统计上限，以下内容统计仅覆盖前 %d 份，不能视为全量结论。".formatted(MAX_DOCUMENTS);
         }
-        if (containsAny(message, "多少文件", "多少个文件", "文件数", "文件数量", "多少档案", "多少份档案", "档案数", "档案数量")) {
+        if (containsAny(message, "多少文件", "多少个文件", "文件数", "文件数量", "多少档案", "多少份档案", "档案数", "档案数量")
+                || (message != null && message.contains("统计") && containsAny(message, "文件", "档案"))) {
             return coverage;
         }
         if (containsAny(message, "哪些学生", "学生名单", "名单")) {
@@ -102,7 +103,7 @@ public class ScopeAggregateToolImpl implements ScopeAggregateTool {
         String materials = materialCounts.entrySet().stream()
                 .map(entry -> "%s %d 份".formatted(entry.getKey(), entry.getValue()))
                 .collect(Collectors.joining("；"));
-        return coverage + "已索引档案中的材料覆盖：" + materials + "。材料数量按档案去重，不按页面重复计数。";
+        return coverage + "已抽取到材料类型事实的档案覆盖：" + materials + "。材料数量按档案去重，不按页面重复计数。";
     }
 
     private List<ArchiveFactEvidence> selectEvidence(String message, List<ArchiveFactEvidence> evidence) {

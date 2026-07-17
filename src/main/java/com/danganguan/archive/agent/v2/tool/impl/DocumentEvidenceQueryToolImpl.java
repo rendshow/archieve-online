@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class DocumentEvidenceQueryToolImpl implements DocumentEvidenceQueryTool {
     private static final Pattern PERSON_BEFORE_POSSESSIVE = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})的");
+    private static final Pattern PERSON_BEFORE_QUESTION = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})(?=(?:哪一年|哪年|是谁|什么人|何时|什么时候))");
     private static final Pattern COURSE_AFTER_POSSESSIVE = Pattern.compile("的([\\u4e00-\\u9fa5]{2,20})成绩");
     private static final Pattern COURSE_DIRECT = Pattern.compile("([\\u4e00-\\u9fa5]{2,20})成绩(?:是多少|多少|是|为)?");
     private static final List<String> NON_NAME_TOKENS = List.of("当前文件", "这个文件", "这份档案", "学生姓名", "高等数学", "档案信息");
@@ -36,13 +37,17 @@ public class DocumentEvidenceQueryToolImpl implements DocumentEvidenceQueryTool 
         if (courseName != null) {
             return courseAnswer(courseName, facts);
         }
-        if (containsAny(message, "学位", "授予日期", "什么时候", "几月份")) {
-            return firstFactAnswer("学位授予日期", facts, ArchiveFactType.DEGREE_AWARD_DATE);
+        if (containsAny(message, "学位", "授予日期", "什么时候", "几月份", "毕业", "哪一年", "哪年")) {
+            QueryResult result = firstFactAnswer("学位授予日期", facts, ArchiveFactType.DEGREE_AWARD_DATE);
+            if (containsAny(message, "毕业", "哪一年", "哪年") && !result.evidence().isEmpty()) {
+                return new QueryResult("档案中可核验的是" + result.answer() + "该日期为学位授予日期，不能自动等同于毕业日期。", result.evidence());
+            }
+            return result;
         }
         if (message != null && message.contains("学号")) {
             return firstFactAnswer("学号", facts, ArchiveFactType.STUDENT_ID);
         }
-        return overviewAnswer(facts);
+        return overviewAnswer(message, facts);
     }
 
     private List<ArchiveFactEvidence> loadFacts(String message, AgentResolvedScope scope) {
@@ -97,9 +102,17 @@ public class DocumentEvidenceQueryToolImpl implements DocumentEvidenceQueryTool 
         return new QueryResult("%s：%s（%s，第 %d 页）。".formatted(label, first.factValue(), first.archiveTitle(), first.pageNo()), matches);
     }
 
-    private QueryResult overviewAnswer(List<ArchiveFactEvidence> facts) {
+    private QueryResult overviewAnswer(String message, List<ArchiveFactEvidence> facts) {
+        if (containsAny(message, "是谁", "什么人")) {
+            return personOverviewAnswer(facts);
+        }
+        boolean includeGrades = containsAny(message, "成绩", "课程");
         List<ArchiveFactEvidence> selected = facts.stream()
-                .filter(fact -> fact.factType() != ArchiveFactType.MATERIAL_TYPE)
+                .filter(fact -> fact.factType() == ArchiveFactType.PERSON_NAME
+                        || fact.factType() == ArchiveFactType.STUDENT_ID
+                        || fact.factType() == ArchiveFactType.DEGREE_AWARD_DATE
+                        || fact.factType() == ArchiveFactType.MATERIAL_TYPE
+                        || (includeGrades && fact.factType() == ArchiveFactType.COURSE_GRADE))
                 .limit(20)
                 .toList();
         if (selected.isEmpty()) {
@@ -111,11 +124,54 @@ public class DocumentEvidenceQueryToolImpl implements DocumentEvidenceQueryTool 
         return new QueryResult(answer, selected);
     }
 
+    private QueryResult personOverviewAnswer(List<ArchiveFactEvidence> facts) {
+        List<ArchiveFactEvidence> names = facts.stream().filter(fact -> fact.factType() == ArchiveFactType.PERSON_NAME).toList();
+        List<ArchiveFactEvidence> studentIds = facts.stream().filter(fact -> fact.factType() == ArchiveFactType.STUDENT_ID).toList();
+        List<ArchiveFactEvidence> degreeDates = facts.stream().filter(fact -> fact.factType() == ArchiveFactType.DEGREE_AWARD_DATE).toList();
+        List<ArchiveFactEvidence> materials = facts.stream().filter(fact -> fact.factType() == ArchiveFactType.MATERIAL_TYPE).toList();
+        List<ArchiveFactEvidence> evidence = new java.util.ArrayList<>();
+        evidence.addAll(names.stream().limit(1).toList());
+        evidence.addAll(studentIds.stream().limit(1).toList());
+        evidence.addAll(degreeDates.stream().limit(1).toList());
+        evidence.addAll(materials.stream().limit(5).toList());
+        String name = names.isEmpty() ? "未识别" : names.getFirst().factValue();
+        StringBuilder answer = new StringBuilder("当前档案中可确认该学生为“").append(name).append("”。");
+        if (!studentIds.isEmpty()) {
+            answer.append("学号：").append(studentIds.getFirst().factValue()).append("。");
+        }
+        List<String> materialNames = materials.stream().map(fact -> materialLabel(fact.factValue())).distinct().toList();
+        if (!materialNames.isEmpty()) {
+            answer.append("已识别材料：").append(String.join("、", materialNames)).append("。");
+        }
+        if (!degreeDates.isEmpty()) {
+            answer.append("学位授予日期：").append(degreeDates.getFirst().factValue()).append("。");
+        }
+        return new QueryResult(answer.toString(), evidence);
+    }
+
+    private String materialLabel(String value) {
+        return switch (value) {
+            case "TRANSCRIPT" -> "成绩单";
+            case "STUDENT_STATUS_FORM" -> "学籍材料";
+            case "GRADUATION_APPRAISAL" -> "毕业鉴定";
+            case "REVIEW_FORM" -> "评阅材料";
+            case "DEGREE_AWARD_DECISION" -> "学位授予材料";
+            default -> value;
+        };
+    }
+
     private String extractPersonName(String message) {
         if (message == null) {
             return null;
         }
-        Matcher matcher = PERSON_BEFORE_POSSESSIVE.matcher(message);
+        Matcher matcher = PERSON_BEFORE_QUESTION.matcher(message);
+        while (matcher.find()) {
+            String candidate = matcher.group(1);
+            if (!NON_NAME_TOKENS.contains(candidate)) {
+                return candidate;
+            }
+        }
+        matcher = PERSON_BEFORE_POSSESSIVE.matcher(message);
         while (matcher.find()) {
             String candidate = matcher.group(1);
             if (!NON_NAME_TOKENS.contains(candidate)) {
