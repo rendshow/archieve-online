@@ -1,0 +1,66 @@
+[
+  {
+    "id": "locate-person-material",
+    "message": "帮我找韩雪的成绩单",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "LOCATE_DOCUMENT",
+    "toolName": "ARCHIVE_LOCATE",
+    "evidenceRequirement": "METADATA_ALLOWED"
+  },
+  {
+    "id": "course-grade",
+    "message": "韩雪的高等数学成绩是多少？",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "ANSWER_FROM_DOCUMENTS",
+    "toolName": "DOCUMENT_EVIDENCE_QUERY",
+    "evidenceRequirement": "PAGE_EVIDENCE_REQUIRED"
+  },
+  {
+    "id": "document-content",
+    "message": "这个档案记录了哪些信息？",
+    "context": {"pageType": "ARCHIVE_DOCUMENT", "hallId": 1, "folderPath": "西区/测试", "documentId": 8},
+    "intent": "ANSWER_FROM_DOCUMENTS",
+    "toolName": "DOCUMENT_EVIDENCE_QUERY",
+    "evidenceRequirement": "PAGE_EVIDENCE_REQUIRED"
+  },
+  {
+    "id": "folder-count",
+    "message": "统计当前文件夹下的文件",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "SUMMARIZE_SCOPE",
+    "toolName": "SCOPE_AGGREGATE",
+    "evidenceRequirement": "SCOPE_STATISTICS_REQUIRED"
+  },
+  {
+    "id": "folder-students",
+    "message": "当前文件夹有哪些学生",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "SUMMARIZE_SCOPE",
+    "toolName": "SCOPE_AGGREGATE",
+    "evidenceRequirement": "SCOPE_STATISTICS_REQUIRED"
+  },
+  {
+    "id": "governance-consistency",
+    "message": "检查这批学籍材料的姓名、学号和文件名是否一致",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "AUDIT_ARCHIVE",
+    "toolName": "GOVERNANCE_INSPECT",
+    "evidenceRequirement": "PAGE_EVIDENCE_REQUIRED"
+  },
+  {
+    "id": "scope-conflict",
+    "message": "查询全校所有档案",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "OUT_OF_SCOPE",
+    "toolName": "NONE",
+    "evidenceRequirement": "INSUFFICIENT_EVIDENCE_REJECT"
+  },
+  {
+    "id": "clarify-ambiguous",
+    "message": "帮我处理一下",
+    "context": {"pageType": "ARCHIVE_FOLDER", "hallId": 1, "folderPath": "西区/测试"},
+    "intent": "CLARIFY",
+    "toolName": "NONE",
+    "evidenceRequirement": "INSUFFICIENT_EVIDENCE_REJECT"
+  }
+]
