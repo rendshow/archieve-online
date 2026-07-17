@@ -78,6 +78,13 @@ archive:
       timeout-seconds: ${ARCHIVE_AI_TIMEOUT_SECONDS:60}
   agent-v2:
     llm-enabled: ${ARCHIVE_AGENT_V2_LLM_ENABLED:false}
+  search:
+    opensearch:
+      enabled: ${ARCHIVE_OPENSEARCH_ENABLED:false}
+      endpoint: ${ARCHIVE_OPENSEARCH_ENDPOINT:http://127.0.0.1:9200}
+      index-alias: ${ARCHIVE_OPENSEARCH_INDEX_ALIAS:archive-page-read}
+      connect-timeout-seconds: ${ARCHIVE_OPENSEARCH_CONNECT_TIMEOUT_SECONDS:5}
+      request-timeout-seconds: ${ARCHIVE_OPENSEARCH_REQUEST_TIMEOUT_SECONDS:15}
   naming:
     provider: ${ARCHIVE_NAMING_PROVIDER:local}
   boundary:
