@@ -55,7 +55,7 @@ class AgentV2AnswerComposerTest {
                 List.of("课程成绩"), AgentEvidenceRequirement.PAGE_EVIDENCE_REQUIRED, true, "测试", null);
         ArchiveFactEvidence evidence = new ArchiveFactEvidence(1L, "测试档案", "测试", 5,
                 ArchiveFactType.COURSE_GRADE, "自然辩证法", "86", "86", new BigDecimal("0.75"), "自然辩证法 86");
-        return new AgentToolExecutionResult(task, "COMPLETED", "RULE", "韩雪的自然辩证法成绩为 86（第 5 页）。",
+        return new AgentToolExecutionResult(1L, "request-1", task, "COMPLETED", "RULE", "韩雪的自然辩证法成绩为 86（第 5 页）。",
                 List.of(), List.of(evidence), List.of());
     }
 }

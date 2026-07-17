@@ -6,6 +6,8 @@ import com.danganguan.archive.document.fact.dto.ArchiveFactEvidence;
 import java.util.List;
 
 public record AgentToolExecutionResult(
+        Long sessionId,
+        String requestId,
         AgentTaskSpec task,
         String status,
         String answerSource,
