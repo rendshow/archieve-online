@@ -14,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -76,11 +75,6 @@ public class ArchiveDocumentPageIndexServiceImpl implements ArchiveDocumentPageI
             PDFRenderer renderer = new PDFRenderer(pdf);
             List<IndexedPage> pages = new ArrayList<>();
             for (int pageIndex = 0; pageIndex < pdf.getNumberOfPages(); pageIndex++) {
-                String nativeText = extractPdfPageText(pdf, pageIndex + 1);
-                if (!nativeText.isBlank()) {
-                    pages.add(new IndexedPage(pageIndex + 1, nativeText, BigDecimal.ONE, "pdf-text", "PDF 原生文本提取"));
-                    continue;
-                }
                 pages.add(ocrRenderedPdfPage(renderer, pageIndex));
             }
             return pages;
@@ -104,14 +98,6 @@ public class ArchiveDocumentPageIndexServiceImpl implements ArchiveDocumentPageI
     private IndexedPage indexImage(Path imagePath) {
         OcrResult result = ocrService.recognize(imagePath);
         return new IndexedPage(1, result.text(), result.confidence(), result.engine(), result.reason());
-    }
-
-    private String extractPdfPageText(PDDocument pdf, int pageNo) throws IOException {
-        PDFTextStripper stripper = new PDFTextStripper();
-        stripper.setStartPage(pageNo);
-        stripper.setEndPage(pageNo);
-        String text = stripper.getText(pdf);
-        return text == null ? "" : text.trim();
     }
 
     private String extension(Path path) {
