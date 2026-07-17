@@ -39,6 +39,9 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
 
     @Override
     public LocateResult locate(String message, AgentResolvedScope scope) {
+        if (!hasSearchClue(message) && !(scope.scopeType() == AgentScopeType.DOCUMENT && scope.documentId() != null)) {
+            return new LocateResult("没有识别到可用于定位的姓名、学号、档号或材料类型。请补充具体线索；“这份档案”需要在档案详情页中使用，或在同一会话中保留上轮定位结果。", List.of(), List.of());
+        }
         List<ArchiveFactEvidence> evidence = locateByFacts(message, scope);
         List<AgentDocumentReference> documents = documentsFromEvidence(evidence);
         if (documents.isEmpty()) {
@@ -143,6 +146,9 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
     private List<AgentDocumentReference> documentsFromEvidence(List<ArchiveFactEvidence> evidence) {
         Map<Long, ArchiveFactEvidence> unique = new LinkedHashMap<>();
         evidence.forEach(item -> unique.putIfAbsent(item.archiveDocumentId(), item));
+        if (unique.isEmpty()) {
+            return List.of();
+        }
         Map<Long, ArchiveDocument> documentsById = archiveDocumentService.listByIds(unique.keySet()).stream()
                 .collect(java.util.stream.Collectors.toMap(ArchiveDocument::getId, document -> document));
         return unique.keySet().stream()
@@ -184,6 +190,13 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
         if (message.contains("评阅")) return "REVIEW_FORM";
         if (message.contains("学位")) return "DEGREE_AWARD_DECISION";
         return null;
+    }
+
+    private boolean hasSearchClue(String message) {
+        return firstMatch(STUDENT_ID_PATTERN, message) != null
+                || firstMatch(ARCHIVE_NO_PATTERN, message) != null
+                || extractName(message) != null
+                || materialValue(message) != null;
     }
 
     private String firstMatch(Pattern pattern, String text) {

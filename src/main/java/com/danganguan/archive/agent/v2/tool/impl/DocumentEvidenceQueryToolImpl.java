@@ -40,6 +40,13 @@ public class DocumentEvidenceQueryToolImpl implements DocumentEvidenceQueryTool 
         if (containsAny(message, "学位", "授予日期", "什么时候", "几月份", "毕业", "哪一年", "哪年")) {
             QueryResult result = firstFactAnswer("学位授予日期", facts, ArchiveFactType.DEGREE_AWARD_DATE);
             if (containsAny(message, "毕业", "哪一年", "哪年") && !result.evidence().isEmpty()) {
+                if (containsAny(message, "是谁", "什么人")) {
+                    QueryResult identity = personOverviewAnswer(facts);
+                    List<ArchiveFactEvidence> evidence = java.util.stream.Stream.concat(identity.evidence().stream(), result.evidence().stream())
+                            .distinct().toList();
+                    return new QueryResult(identity.answer() + "档案中可核验的学位授予日期为 "
+                            + result.evidence().getFirst().factValue() + "。该日期不能自动等同于毕业日期。", evidence);
+                }
                 return new QueryResult("档案中可核验的是" + result.answer() + "该日期为学位授予日期，不能自动等同于毕业日期。", result.evidence());
             }
             return result;
