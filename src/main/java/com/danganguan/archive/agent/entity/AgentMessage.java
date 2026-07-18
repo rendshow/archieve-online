@@ -1,7 +1,7 @@
 package com.danganguan.archive.agent.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
-import com.danganguan.archive.agent.enums.AgentIntent;
+import com.danganguan.archive.agent.v2.enums.AgentTaskIntent;
 
 import java.time.LocalDateTime;
 
@@ -11,7 +11,7 @@ public class AgentMessage {
     private Long sessionId;
     private String role;
     private String content;
-    private AgentIntent intent;
+    private AgentTaskIntent intent;
     private String clientContextJson;
     private String resolvedScopeJson;
     private LocalDateTime createdAt;
@@ -24,8 +24,8 @@ public class AgentMessage {
     public void setRole(String role) { this.role = role; }
     public String getContent() { return content; }
     public void setContent(String content) { this.content = content; }
-    public AgentIntent getIntent() { return intent; }
-    public void setIntent(AgentIntent intent) { this.intent = intent; }
+    public AgentTaskIntent getIntent() { return intent; }
+    public void setIntent(AgentTaskIntent intent) { this.intent = intent; }
     public String getClientContextJson() { return clientContextJson; }
     public void setClientContextJson(String clientContextJson) { this.clientContextJson = clientContextJson; }
     public String getResolvedScopeJson() { return resolvedScopeJson; }

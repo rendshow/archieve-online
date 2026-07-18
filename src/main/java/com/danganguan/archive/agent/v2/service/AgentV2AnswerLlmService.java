@@ -1,8 +1,8 @@
-package com.danganguan.archive.agent.llm;
+package com.danganguan.archive.agent.v2.service;
 
 import com.danganguan.archive.agent.dto.AgentDocumentReference;
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
-import com.danganguan.archive.agent.enums.AgentIntent;
+import com.danganguan.archive.agent.v2.enums.AgentTaskIntent;
 import com.danganguan.archive.common.config.AiProviderProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -23,7 +23,7 @@ import java.util.function.Consumer;
 
 @Service
 @RequiredArgsConstructor
-public class AgentAnswerLlmService {
+public class AgentV2AnswerLlmService {
     private static final int CONTEXT_LIMIT = 12000;
 
     private final AiProviderProperties properties;
@@ -31,7 +31,7 @@ public class AgentAnswerLlmService {
     private final RestClient.Builder restClientBuilder;
 
     public String enhance(String userMessage,
-                          AgentIntent intent,
+                          AgentTaskIntent intent,
                           AgentResolvedScope scope,
                           String draftAnswer,
                           List<AgentDocumentReference> references,
@@ -50,7 +50,7 @@ public class AgentAnswerLlmService {
     }
 
     public String enhanceStream(String userMessage,
-                                AgentIntent intent,
+                                AgentTaskIntent intent,
                                 AgentResolvedScope scope,
                                 String draftAnswer,
                                 List<AgentDocumentReference> references,
@@ -77,7 +77,7 @@ public class AgentAnswerLlmService {
 
     private String callModel(AiProviderProperties.OpenAiCompatible config,
                              String userMessage,
-                             AgentIntent intent,
+                             AgentTaskIntent intent,
                              AgentResolvedScope scope,
                              String draftAnswer,
                              List<AgentDocumentReference> references,
@@ -107,7 +107,7 @@ public class AgentAnswerLlmService {
 
     private String callModelStream(AiProviderProperties.OpenAiCompatible config,
                                    String userMessage,
-                                   AgentIntent intent,
+                                   AgentTaskIntent intent,
                                    AgentResolvedScope scope,
                                    String draftAnswer,
                                    List<AgentDocumentReference> references,
@@ -206,7 +206,7 @@ public class AgentAnswerLlmService {
     }
 
     private String userPrompt(String userMessage,
-                              AgentIntent intent,
+                              AgentTaskIntent intent,
                               AgentResolvedScope scope,
                               String draftAnswer,
                               List<AgentDocumentReference> references,
@@ -316,3 +316,4 @@ public class AgentAnswerLlmService {
         }
     }
 }
+

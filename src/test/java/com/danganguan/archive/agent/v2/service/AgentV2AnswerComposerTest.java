@@ -2,7 +2,6 @@ package com.danganguan.archive.agent.v2.service;
 
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
 import com.danganguan.archive.agent.enums.AgentScopeType;
-import com.danganguan.archive.agent.llm.AgentAnswerLlmService;
 import com.danganguan.archive.agent.v2.config.AgentV2Properties;
 import com.danganguan.archive.agent.v2.dto.AgentTaskSpec;
 import com.danganguan.archive.agent.v2.dto.AgentToolExecutionResult;
@@ -23,7 +22,7 @@ import static org.mockito.Mockito.when;
 class AgentV2AnswerComposerTest {
     @Test
     void shouldAcceptLlmAnswerThatKeepsEvidenceValue() {
-        AgentAnswerLlmService llm = mock(AgentAnswerLlmService.class);
+        AgentV2AnswerLlmService llm = mock(AgentV2AnswerLlmService.class);
         when(llm.enhance(any(), any(), any(), any(), any(), any())).thenReturn("韩雪的自然辩证法成绩为 86 分。证据见第 5 页。");
 
         var result = new AgentV2AnswerComposer(enabledProperties(), llm).compose("韩雪的自然辩证法成绩是多少？", result());
@@ -34,7 +33,7 @@ class AgentV2AnswerComposerTest {
 
     @Test
     void shouldRejectLlmAnswerThatChangesEvidenceValue() {
-        AgentAnswerLlmService llm = mock(AgentAnswerLlmService.class);
+        AgentV2AnswerLlmService llm = mock(AgentV2AnswerLlmService.class);
         when(llm.enhance(any(), any(), any(), any(), any(), any())).thenReturn("韩雪的自然辩证法成绩为 99 分。");
 
         var result = new AgentV2AnswerComposer(enabledProperties(), llm).compose("韩雪的自然辩证法成绩是多少？", result());

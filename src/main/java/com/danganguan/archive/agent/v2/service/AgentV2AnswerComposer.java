@@ -1,8 +1,6 @@
 package com.danganguan.archive.agent.v2.service;
 
 import com.danganguan.archive.agent.dto.AgentDocumentReference;
-import com.danganguan.archive.agent.enums.AgentIntent;
-import com.danganguan.archive.agent.llm.AgentAnswerLlmService;
 import com.danganguan.archive.agent.v2.config.AgentV2Properties;
 import com.danganguan.archive.agent.v2.dto.AgentTaskSpec;
 import com.danganguan.archive.agent.v2.dto.AgentToolExecutionResult;
@@ -24,13 +22,13 @@ public class AgentV2AnswerComposer {
     private static final Pattern NUMBER_PATTERN = Pattern.compile("(?<!\\d)\\d{1,}(?!\\d)");
 
     private final AgentV2Properties properties;
-    private final AgentAnswerLlmService agentAnswerLlmService;
+    private final AgentV2AnswerLlmService agentAnswerLlmService;
 
     public ComposeResult compose(String userMessage, AgentToolExecutionResult result) {
         if (!properties.isLlmEnabled() || !"COMPLETED".equals(result.status())) {
             return new ComposeResult(result.answer(), "RULE");
         }
-        String candidate = agentAnswerLlmService.enhance(userMessage, legacyIntent(result.task().intent()), result.task().scope(),
+        String candidate = agentAnswerLlmService.enhance(userMessage, result.task().intent(), result.task().scope(),
                 result.answer(), result.documents(), result);
         if (!isSafe(candidate, result)) {
             return new ComposeResult(result.answer(), "RULE_GUARDED");
@@ -80,16 +78,6 @@ public class AgentV2AnswerComposer {
             numbers.add(matcher.group());
         }
         return numbers;
-    }
-
-    private AgentIntent legacyIntent(AgentTaskIntent intent) {
-        return switch (intent) {
-            case LOCATE_DOCUMENT -> AgentIntent.SEARCH_ARCHIVE;
-            case ANSWER_FROM_DOCUMENTS -> AgentIntent.DISCUSS_ARCHIVE_INFO;
-            case SUMMARIZE_SCOPE -> AgentIntent.SUMMARIZE_SCOPE;
-            case AUDIT_ARCHIVE -> AgentIntent.CHECK_MISSING_MATERIALS;
-            case CLARIFY, OUT_OF_SCOPE -> AgentIntent.UNKNOWN;
-        };
     }
 
     private boolean containsAny(String text, String... values) {

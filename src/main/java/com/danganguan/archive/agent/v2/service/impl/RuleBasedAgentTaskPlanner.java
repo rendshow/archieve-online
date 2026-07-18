@@ -3,7 +3,6 @@ package com.danganguan.archive.agent.v2.service.impl;
 import com.danganguan.archive.agent.context.AgentContextResolver;
 import com.danganguan.archive.agent.dto.AgentClientContext;
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
-import com.danganguan.archive.agent.enums.AgentIntent;
 import com.danganguan.archive.agent.v2.dto.AgentTaskSpec;
 import com.danganguan.archive.agent.v2.enums.AgentEvidenceRequirement;
 import com.danganguan.archive.agent.v2.enums.AgentTaskIntent;
@@ -27,36 +26,36 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
         }
         if (isOutOfScopeRequest(text, clientContext)) {
             return new AgentTaskSpec(AgentTaskIntent.OUT_OF_SCOPE, "NONE",
-                    contextResolver.resolve(AgentIntent.SEARCH_ARCHIVE, clientContext), List.of(),
+                    contextResolver.resolve(AgentTaskIntent.LOCATE_DOCUMENT, clientContext), List.of(),
                     AgentEvidenceRequirement.INSUFFICIENT_EVIDENCE_REJECT, false,
                     "当前页面已限定目录范围，用户请求扩大到范围之外。",
                     "当前对话只能检索本页面范围。请回到全局档案页或上级目录后再查询。");
         }
         if (containsAny(text, "重复录入", "是否重复", "文件名是否一致", "姓名、学号", "姓名和学号", "检查这批", "核验")) {
-            return task(AgentTaskIntent.AUDIT_ARCHIVE, "GOVERNANCE_INSPECT", AgentIntent.CHECK_MISSING_MATERIALS,
+            return task(AgentTaskIntent.AUDIT_ARCHIVE, "GOVERNANCE_INSPECT", AgentTaskIntent.AUDIT_ARCHIVE,
                     clientContext, requestedFields(text), AgentEvidenceRequirement.PAGE_EVIDENCE_REQUIRED, true,
                     "用户要求检查档案之间或文件名与页内字段之间的一致性。", null);
         }
         if (containsAny(text, "找", "查", "搜索", "定位", "有没有", "是否有")) {
-            return task(AgentTaskIntent.LOCATE_DOCUMENT, "ARCHIVE_LOCATE", AgentIntent.SEARCH_ARCHIVE,
+            return task(AgentTaskIntent.LOCATE_DOCUMENT, "ARCHIVE_LOCATE", AgentTaskIntent.LOCATE_DOCUMENT,
                     clientContext, List.of("档案定位"), AgentEvidenceRequirement.METADATA_ALLOWED, false,
                     "用户提供线索以定位一个或多个档案。", null);
         }
         if (isScopeAggregateQuestion(text)) {
-            return task(AgentTaskIntent.SUMMARIZE_SCOPE, "SCOPE_AGGREGATE", AgentIntent.SUMMARIZE_SCOPE,
+            return task(AgentTaskIntent.SUMMARIZE_SCOPE, "SCOPE_AGGREGATE", AgentTaskIntent.SUMMARIZE_SCOPE,
                     clientContext, requestedFields(text), AgentEvidenceRequirement.SCOPE_STATISTICS_REQUIRED, true,
                     "用户要求对当前范围内的档案或已提取事实做聚合。", null);
         }
         if (containsAny(text, "成绩是多少", "成绩多少", "多少分", "什么时候", "几月份", "哪一年", "哪年", "毕业", "谁", "哪些信息", "记录了什么",
                 "课程", "导师", "学号", "学位证", "毕业证", "成绩单")) {
-            return task(AgentTaskIntent.ANSWER_FROM_DOCUMENTS, "DOCUMENT_EVIDENCE_QUERY", AgentIntent.DISCUSS_ARCHIVE_INFO,
+            return task(AgentTaskIntent.ANSWER_FROM_DOCUMENTS, "DOCUMENT_EVIDENCE_QUERY", AgentTaskIntent.ANSWER_FROM_DOCUMENTS,
                     clientContext, requestedFields(text), AgentEvidenceRequirement.PAGE_EVIDENCE_REQUIRED, true,
                     "用户要求根据档案内容回答具体事实，必须给出页级 OCR 证据。", null);
         }
         return clarify(clientContext, "我还不能确定你是要定位档案、根据档案内容问答、汇总当前范围，还是做治理核验。请补充目标对象和想得到的结果。");
     }
 
-    private AgentTaskSpec task(AgentTaskIntent intent, String toolName, AgentIntent scopeIntent,
+    private AgentTaskSpec task(AgentTaskIntent intent, String toolName, AgentTaskIntent scopeIntent,
                                AgentClientContext context, List<String> fields,
                                AgentEvidenceRequirement evidenceRequirement, boolean requiresExistingIndex,
                                String reason, String clarification) {
@@ -65,7 +64,7 @@ public class RuleBasedAgentTaskPlanner implements AgentTaskPlanner {
     }
 
     private AgentTaskSpec clarify(AgentClientContext context, String clarification) {
-        return task(AgentTaskIntent.CLARIFY, "NONE", AgentIntent.SEARCH_ARCHIVE, context, List.of(),
+        return task(AgentTaskIntent.CLARIFY, "NONE", AgentTaskIntent.CLARIFY, context, List.of(),
                 AgentEvidenceRequirement.INSUFFICIENT_EVIDENCE_REJECT, false,
                 "输入不足以可靠选择工具。", clarification);
     }
