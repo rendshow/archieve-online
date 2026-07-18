@@ -11,7 +11,7 @@ class ArchiveQueryTermsTest {
 
         assertThat(terms.personName()).isEqualTo("包英夫");
         assertThat(terms.materialType()).isEqualTo("TRANSCRIPT");
-        assertThat(terms.pageQueries()).contains("包英夫", "成绩单");
+        assertThat(terms.pageQueries()).contains("包英夫 成绩单");
     }
 
     @Test

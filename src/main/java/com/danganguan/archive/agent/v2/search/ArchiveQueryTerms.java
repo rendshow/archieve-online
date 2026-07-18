@@ -32,9 +32,14 @@ public record ArchiveQueryTerms(
         LinkedHashSet<String> queries = new LinkedHashSet<>();
         add(queries, studentId);
         add(queries, archiveNo);
-        add(queries, personName);
-        add(queries, materialLabel(materialType));
-        add(queries, courseName);
+        String materialLabel = materialLabel(materialType);
+        if (personName != null && materialLabel != null) {
+            add(queries, personName + " " + materialLabel);
+        } else {
+            add(queries, personName);
+            add(queries, materialLabel);
+        }
+        if (personName == null || materialLabel == null) add(queries, courseName);
         String residual = text;
         for (String value : new String[]{studentId, archiveNo, personName, materialLabel(materialType), courseName}) {
             if (value != null) residual = residual.replace(value, " ");

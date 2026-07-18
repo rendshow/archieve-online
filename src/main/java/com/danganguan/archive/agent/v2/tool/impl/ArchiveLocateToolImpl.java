@@ -43,7 +43,11 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
         List<ArchiveFactEvidence> evidence = locateByFacts(terms, scope);
         List<AgentDocumentReference> factDocuments = documentsFromEvidence(evidence);
         List<AgentDocumentReference> metadataDocuments = locateByMetadata(terms, scope);
-        List<AgentDocumentReference> pageDocuments = locateByPageText(terms, scope);
+        // A high-confidence fact match is authoritative for the candidate set. Page search may
+        // enrich an empty fact result, but must not re-introduce unrelated sibling archives.
+        List<AgentDocumentReference> pageDocuments = factDocuments.isEmpty()
+                ? locateByPageText(terms, scope)
+                : List.of();
         List<AgentDocumentReference> documents = fuseRankedDocuments(factDocuments, metadataDocuments, pageDocuments);
         if (documents.isEmpty()) {
             return new LocateResult("当前范围内没有找到匹配的正式档案。已使用姓名、学号、材料类型、档号和题名线索检索。", List.of(), evidence);
