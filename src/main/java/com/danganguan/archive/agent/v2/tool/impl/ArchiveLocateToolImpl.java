@@ -5,6 +5,7 @@ import com.danganguan.archive.agent.dto.AgentDocumentReference;
 import com.danganguan.archive.agent.dto.AgentResolvedScope;
 import com.danganguan.archive.agent.enums.AgentScopeType;
 import com.danganguan.archive.agent.v2.tool.ArchiveLocateTool;
+import com.danganguan.archive.agent.v2.search.ArchiveQueryTerms;
 import com.danganguan.archive.document.entity.ArchiveDocument;
 import com.danganguan.archive.document.enums.ArchiveDocumentStatus;
 import com.danganguan.archive.document.fact.dto.ArchiveFactEvidence;
@@ -22,19 +23,12 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @Component
 @RequiredArgsConstructor
 public class ArchiveLocateToolImpl implements ArchiveLocateTool {
     private static final int LIMIT = 20;
-    private static final Pattern STUDENT_ID_PATTERN = Pattern.compile("(?<!\\d)(\\d{6,})(?!\\d)");
-    private static final Pattern ARCHIVE_NO_PATTERN = Pattern.compile("(\\d{4}-[A-Za-z]{1,6}\\d{1,4}[•.．·\\-]\\d{1,4}[•.．·\\-]\\d{1,6}(?:-\\d+)?[\\u4e00-\\u9fa5]{0,4})");
-    private static final Pattern NAME_BEFORE_POSSESSIVE = Pattern.compile("([\\u4e00-\\u9fa5]{2,4})的");
-    private static final Pattern NAME_AFTER_CALLED = Pattern.compile("(?:叫|姓名为|姓名是)([\\u4e00-\\u9fa5]{2,4})");
-    private static final List<String> NON_NAME_TOKENS = List.of("当前文件", "这个文件", "这份档案", "学生姓名", "成绩单", "学籍材料");
+    private static final int RRF_K = 60;
 
     private final ArchiveDocumentFactQueryService archiveDocumentFactQueryService;
     private final ArchiveDocumentService archiveDocumentService;
@@ -42,17 +36,15 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
 
     @Override
     public LocateResult locate(String message, AgentResolvedScope scope) {
-        if (!hasSearchClue(message) && !(scope.scopeType() == AgentScopeType.DOCUMENT && scope.documentId() != null)) {
+        ArchiveQueryTerms terms = ArchiveQueryTerms.parse(message);
+        if (!terms.hasLocateClue() && !(scope.scopeType() == AgentScopeType.DOCUMENT && scope.documentId() != null)) {
             return new LocateResult("没有识别到可用于定位的姓名、学号、档号或材料类型。请补充具体线索；“这份档案”需要在档案详情页中使用，或在同一会话中保留上轮定位结果。", List.of(), List.of());
         }
-        List<ArchiveFactEvidence> evidence = locateByFacts(message, scope);
-        List<AgentDocumentReference> documents = documentsFromEvidence(evidence);
-        if (documents.isEmpty()) {
-            documents = locateByMetadata(message, scope);
-        }
-        if (documents.isEmpty()) {
-            documents = locateByPageText(message, scope);
-        }
+        List<ArchiveFactEvidence> evidence = locateByFacts(terms, scope);
+        List<AgentDocumentReference> factDocuments = documentsFromEvidence(evidence);
+        List<AgentDocumentReference> metadataDocuments = locateByMetadata(terms, scope);
+        List<AgentDocumentReference> pageDocuments = locateByPageText(terms, scope);
+        List<AgentDocumentReference> documents = fuseRankedDocuments(factDocuments, metadataDocuments, pageDocuments);
         if (documents.isEmpty()) {
             return new LocateResult("当前范围内没有找到匹配的正式档案。已使用姓名、学号、材料类型、档号和题名线索检索。", List.of(), evidence);
         }
@@ -64,24 +56,30 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
         return new LocateResult(answer, documents, evidence);
     }
 
-    private List<AgentDocumentReference> locateByPageText(String message, AgentResolvedScope scope) {
+    private List<AgentDocumentReference> locateByPageText(ArchiveQueryTerms terms, AgentResolvedScope scope) {
         Map<Long, AgentDocumentReference> documents = new LinkedHashMap<>();
-        for (ArchivePageSearchHit hit : archivePageSearchService.search(scope, message, LIMIT)) {
-            documents.putIfAbsent(hit.documentId(), new AgentDocumentReference(hit.documentId(), hit.hallId(), hit.title(),
-                    hit.folderPath(), null));
+        try {
+            for (String query : terms.pageQueries()) {
+                for (ArchivePageSearchHit hit : archivePageSearchService.search(scope, query, LIMIT)) {
+                    documents.putIfAbsent(hit.documentId(), new AgentDocumentReference(hit.documentId(), hit.hallId(), hit.title(),
+                            hit.folderPath(), null));
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Metadata and fact retrieval remain usable when the optional page index is unavailable.
         }
         return List.copyOf(documents.values());
     }
 
-    private List<ArchiveFactEvidence> locateByFacts(String message, AgentResolvedScope scope) {
-        String studentId = firstMatch(STUDENT_ID_PATTERN, message);
+    private List<ArchiveFactEvidence> locateByFacts(ArchiveQueryTerms terms, AgentResolvedScope scope) {
+        String studentId = terms.studentId();
         if (studentId != null) {
             return factSearch(scope, ArchiveFactType.STUDENT_ID, studentId);
         }
-        String personName = extractName(message);
+        String personName = terms.personName();
         if (personName != null) {
             List<ArchiveFactEvidence> personEvidence = factSearch(scope, ArchiveFactType.PERSON_NAME, personName);
-            String material = materialValue(message);
+            String material = terms.materialType();
             if (material == null) {
                 return personEvidence;
             }
@@ -94,7 +92,7 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
                             || (fact.factType() == ArchiveFactType.MATERIAL_TYPE && material.equals(fact.normalizedValue())))
                     .toList();
         }
-        String material = materialValue(message);
+        String material = terms.materialType();
         return material == null ? List.of() : factSearch(scope, ArchiveFactType.MATERIAL_TYPE, material);
     }
 
@@ -119,9 +117,9 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
         return archiveDocumentFactQueryService.search(request);
     }
 
-    private List<AgentDocumentReference> locateByMetadata(String message, AgentResolvedScope scope) {
-        String archiveNo = firstMatch(ARCHIVE_NO_PATTERN, message);
-        String name = extractName(message);
+    private List<AgentDocumentReference> locateByMetadata(ArchiveQueryTerms terms, AgentResolvedScope scope) {
+        String archiveNo = terms.archiveNo();
+        String name = terms.personName();
         if (archiveNo == null && name == null) {
             return List.of();
         }
@@ -180,43 +178,27 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
                 document.getFolderPath(), format == null ? null : format.name());
     }
 
-    private String extractName(String message) {
-        if (message == null) {
-            return null;
-        }
-        for (Pattern pattern : List.of(NAME_BEFORE_POSSESSIVE, NAME_AFTER_CALLED)) {
-            Matcher matcher = pattern.matcher(message);
-            if (matcher.find()) {
-                String candidate = matcher.group(1)
-                        .replaceFirst("^(帮我|请|我)?(找|查|搜索)", "");
-                if (!NON_NAME_TOKENS.contains(candidate)) {
-                    return candidate;
-                }
+    @SafeVarargs
+    private final List<AgentDocumentReference> fuseRankedDocuments(List<AgentDocumentReference>... sources) {
+        Map<Long, RankedDocument> scores = new LinkedHashMap<>();
+        for (List<AgentDocumentReference> source : sources) {
+            for (int rank = 0; rank < source.size(); rank++) {
+                AgentDocumentReference document = source.get(rank);
+                double reciprocalRankScore = 1.0 / (RRF_K + rank + 1);
+                scores.compute(document.documentId(), (ignored, current) -> current == null
+                        ? new RankedDocument(document, reciprocalRankScore)
+                        : current.add(reciprocalRankScore));
             }
         }
-        return null;
+        return scores.values().stream()
+                .sorted(Comparator.comparingDouble(RankedDocument::score).reversed()
+                        .thenComparing(item -> item.document().title()))
+                .limit(LIMIT)
+                .map(RankedDocument::document)
+                .toList();
     }
 
-    private String materialValue(String message) {
-        if (message == null) return null;
-        if (message.contains("成绩单") || message.contains("成绩")) return "TRANSCRIPT";
-        if (message.contains("学籍")) return "STUDENT_STATUS_FORM";
-        if (message.contains("毕业鉴定")) return "GRADUATION_APPRAISAL";
-        if (message.contains("评阅")) return "REVIEW_FORM";
-        if (message.contains("学位")) return "DEGREE_AWARD_DECISION";
-        return null;
-    }
-
-    private boolean hasSearchClue(String message) {
-        return firstMatch(STUDENT_ID_PATTERN, message) != null
-                || firstMatch(ARCHIVE_NO_PATTERN, message) != null
-                || extractName(message) != null
-                || materialValue(message) != null;
-    }
-
-    private String firstMatch(Pattern pattern, String text) {
-        if (text == null) return null;
-        Matcher matcher = pattern.matcher(text);
-        return matcher.find() ? matcher.group(1) : null;
+    private record RankedDocument(AgentDocumentReference document, double score) {
+        private RankedDocument add(double value) { return new RankedDocument(document, score + value); }
     }
 }
