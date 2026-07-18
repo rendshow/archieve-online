@@ -18,7 +18,6 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -34,9 +33,9 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "archive.search.opensearch", name = "enabled", havingValue = "true")
 public class OpenSearchArchivePageSearchService implements ArchivePageSearchService {
     private static final String MAPPING = """
-            {"settings":{"analysis":{"analyzer":{"archive_cjk":{"type":"cjk"}}}},"mappings":{"properties":{
-            "documentId":{"type":"long"},"hallId":{"type":"long"},"title":{"type":"text","analyzer":"archive_cjk","fields":{"keyword":{"type":"keyword"}}},
-            "folderPath":{"type":"keyword"},"pageNo":{"type":"integer"},"ocrText":{"type":"text","analyzer":"archive_cjk"},"updatedAt":{"type":"date"}
+            {"mappings":{"properties":{
+            "documentId":{"type":"long"},"hallId":{"type":"long"},"title":{"type":"text","analyzer":"cjk","fields":{"keyword":{"type":"keyword"}}},
+            "folderPath":{"type":"keyword"},"pageNo":{"type":"integer"},"ocrText":{"type":"text","analyzer":"cjk"},"updatedAt":{"type":"date"}
             }}}""";
 
     private final OpenSearchProperties properties;
@@ -50,9 +49,11 @@ public class OpenSearchArchivePageSearchService implements ArchivePageSearchServ
             return;
         }
         ensureIndex();
+        deleteByDocumentId(document.getId());
         List<ArchiveDocumentPage> pages = pageMapper.selectList(new LambdaQueryWrapper<ArchiveDocumentPage>()
                 .eq(ArchiveDocumentPage::getArchiveDocumentId, document.getId())
                 .orderByAsc(ArchiveDocumentPage::getPageNo));
+        StringBuilder bulk = new StringBuilder();
         for (ArchiveDocumentPage page : pages) {
             Map<String, Object> source = new LinkedHashMap<>();
             source.put("documentId", document.getId());
@@ -62,7 +63,14 @@ public class OpenSearchArchivePageSearchService implements ArchivePageSearchServ
             source.put("pageNo", page.getPageNo());
             source.put("ocrText", page.getOcrText());
             source.put("updatedAt", document.getUpdatedAt() == null ? null : document.getUpdatedAt().toString());
-            put("/" + writeIndex() + "/_doc/" + document.getId() + "-" + page.getPageNo(), json(source));
+            bulk.append(json(Map.of("index", Map.of("_index", writeIndex(), "_id", document.getId() + "-" + page.getPageNo())))).append('\n');
+            bulk.append(json(source)).append('\n');
+        }
+        if (!bulk.isEmpty()) {
+            JsonNode response = requestJson("POST", "/_bulk", bulk.toString(), "application/x-ndjson");
+            if (response.path("errors").asBoolean(false)) {
+                throw new BizException("OpenSearch 批量写入存在失败页");
+            }
         }
     }
 
@@ -72,7 +80,7 @@ public class OpenSearchArchivePageSearchService implements ArchivePageSearchServ
             return;
         }
         ensureIndex();
-        post("/" + properties.getIndexAlias() + "/_delete_by_query", json(Map.of("query", Map.of("term", Map.of("documentId", documentId)))));
+        deleteByDocumentId(documentId);
     }
 
     @Override
@@ -93,7 +101,7 @@ public class OpenSearchArchivePageSearchService implements ArchivePageSearchServ
         Map<String, Object> body = Map.of(
                 "size", Math.max(1, Math.min(limit, 100)),
                 "query", Map.of("bool", Map.of(
-                        "must", List.of(Map.of("multi_match", Map.of("query", query, "fields", List.of("ocrText^3", "title^5"), "operator", "and"))),
+                        "must", List.of(Map.of("multi_match", Map.of("query", query, "fields", List.of("ocrText^3", "title^5"), "minimum_should_match", "60%"))),
                         "filter", filters
                 )),
                 "highlight", Map.of("fields", Map.of("ocrText", Map.of("fragment_size", 160, "number_of_fragments", 1)))
@@ -119,9 +127,11 @@ public class OpenSearchArchivePageSearchService implements ArchivePageSearchServ
             return;
         }
         String index = writeIndex();
-        HttpResponse<String> response = request("PUT", "/" + index, MAPPING, false);
-        if (response.statusCode() != 200 && response.statusCode() != 201 && response.statusCode() != 400) {
-            throw failure("创建 OpenSearch 索引失败", response);
+        HttpResponse<String> exists = request("HEAD", "/" + index, "", false, "application/json");
+        if (exists.statusCode() == 404) {
+            request("PUT", "/" + index, MAPPING, true, "application/json");
+        } else if (exists.statusCode() != 200) {
+            throw failure("检查 OpenSearch 索引失败", exists);
         }
         post("/_aliases", json(Map.of("actions", List.of(Map.of("add", Map.of("index", index, "alias", properties.getIndexAlias()))))));
         initialized = true;
@@ -132,19 +142,23 @@ public class OpenSearchArchivePageSearchService implements ArchivePageSearchServ
         return alias.endsWith("-read") ? alias.substring(0, alias.length() - 5) + "-v1" : alias + "-v1";
     }
 
-    private JsonNode put(String path, String body) {
-        return parse(request("PUT", path, body, true));
-    }
-
     private JsonNode post(String path, String body) {
-        return parse(request("POST", path, body, true));
+        return requestJson("POST", path, body, "application/json");
     }
 
-    private HttpResponse<String> request(String method, String path, String body, boolean requireSuccess) {
+    private void deleteByDocumentId(Long documentId) {
+        post("/" + writeIndex() + "/_delete_by_query", json(Map.of("query", Map.of("term", Map.of("documentId", documentId)))));
+    }
+
+    private JsonNode requestJson(String method, String path, String body, String contentType) {
+        return parse(request(method, path, body, true, contentType));
+    }
+
+    private HttpResponse<String> request(String method, String path, String body, boolean requireSuccess, String contentType) {
         try {
             HttpRequest request = HttpRequest.newBuilder(endpoint(path))
                     .timeout(Duration.ofSeconds(Math.max(1, properties.getRequestTimeoutSeconds())))
-                    .header("Content-Type", "application/json")
+                    .header("Content-Type", contentType)
                     .method(method, HttpRequest.BodyPublishers.ofString(body == null ? "" : body))
                     .build();
             HttpResponse<String> response = HttpClient.newBuilder()
