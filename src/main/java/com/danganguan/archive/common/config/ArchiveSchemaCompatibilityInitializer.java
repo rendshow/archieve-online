@@ -97,12 +97,20 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
 
     private void ensureArchiveTextIndexJobTable() throws SQLException {
         if (tableExists("archive_text_index_job")) {
+            if (!columnExists("archive_text_index_job", "mode")) {
+                jdbcTemplate.execute("ALTER TABLE archive_text_index_job ADD COLUMN mode VARCHAR(32) NOT NULL DEFAULT 'MISSING' AFTER hall_id");
+            }
+            if (!columnExists("archive_text_index_job", "document_ids_json")) {
+                jdbcTemplate.execute("ALTER TABLE archive_text_index_job ADD COLUMN document_ids_json TEXT NULL AFTER mode");
+            }
             return;
         }
         jdbcTemplate.execute("""
                 CREATE TABLE archive_text_index_job (
                   id BIGINT PRIMARY KEY,
                   hall_id BIGINT,
+                  mode VARCHAR(32) NOT NULL DEFAULT 'MISSING',
+                  document_ids_json TEXT,
                   status VARCHAR(32) NOT NULL,
                   batch_size INT NOT NULL DEFAULT 10,
                   total_count INT NOT NULL DEFAULT 0,

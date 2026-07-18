@@ -2,6 +2,7 @@ package com.danganguan.archive.document.indexing.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexJobStatus;
+import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexMode;
 
 import java.time.LocalDateTime;
 
@@ -9,6 +10,8 @@ import java.time.LocalDateTime;
 public class ArchiveTextIndexJob {
     private Long id;
     private Long hallId;
+    private ArchiveTextIndexMode mode;
+    private String documentIdsJson;
     private ArchiveTextIndexJobStatus status;
     private Integer batchSize;
     private Integer totalCount;
@@ -26,6 +29,10 @@ public class ArchiveTextIndexJob {
     public void setId(Long id) { this.id = id; }
     public Long getHallId() { return hallId; }
     public void setHallId(Long hallId) { this.hallId = hallId; }
+    public ArchiveTextIndexMode getMode() { return mode; }
+    public void setMode(ArchiveTextIndexMode mode) { this.mode = mode; }
+    public String getDocumentIdsJson() { return documentIdsJson; }
+    public void setDocumentIdsJson(String documentIdsJson) { this.documentIdsJson = documentIdsJson; }
     public ArchiveTextIndexJobStatus getStatus() { return status; }
     public void setStatus(ArchiveTextIndexJobStatus status) { this.status = status; }
     public Integer getBatchSize() { return batchSize; }

@@ -12,6 +12,7 @@ import com.danganguan.archive.document.indexing.dto.CreateArchiveTextIndexJobReq
 import com.danganguan.archive.document.indexing.dto.ArchiveDocumentTextIndexResult;
 import com.danganguan.archive.document.indexing.entity.ArchiveTextIndexJob;
 import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexJobStatus;
+import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexMode;
 import com.danganguan.archive.document.indexing.mapper.ArchiveTextIndexJobMapper;
 import com.danganguan.archive.document.indexing.service.ArchiveDocumentTextIndexService;
 import com.danganguan.archive.document.indexing.service.ArchiveDocumentIndexStateService;
@@ -22,6 +23,8 @@ import com.danganguan.archive.document.service.ArchiveDocumentService;
 import com.danganguan.archive.event.ArchiveRealtimeEvent;
 import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
 import com.danganguan.archive.search.service.ArchivePageSearchService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -48,6 +51,7 @@ public class ArchiveDocumentTextIndexServiceImpl
     private final ArchiveRealtimeEventPublisher eventPublisher;
     private final ArchivePageSearchService archivePageSearchService;
     private final ArchiveDocumentIndexStateService archiveDocumentIndexStateService;
+    private final ObjectMapper objectMapper;
 
     @Override
     public ArchiveDocument indexOne(Long documentId) {
@@ -110,10 +114,14 @@ public class ArchiveDocumentTextIndexServiceImpl
     public ArchiveTextIndexJob createJob(CreateArchiveTextIndexJobRequest request) {
         int batchSize = normalizeBatchSize(request == null ? null : request.batchSize());
         Long hallId = request == null ? null : request.hallId();
-        int total = countMissing(hallId);
+        ArchiveTextIndexMode mode = request == null || request.mode() == null ? ArchiveTextIndexMode.MISSING : request.mode();
+        List<Long> documentIds = normalizeDocumentIds(request == null ? null : request.documentIds());
+        int total = countCandidates(hallId, mode, documentIds);
         LocalDateTime now = LocalDateTime.now();
         ArchiveTextIndexJob job = new ArchiveTextIndexJob();
         job.setHallId(hallId);
+        job.setMode(mode);
+        job.setDocumentIdsJson(writeDocumentIds(documentIds));
         job.setStatus(ArchiveTextIndexJobStatus.PENDING);
         job.setBatchSize(batchSize);
         job.setTotalCount(total);
@@ -127,7 +135,7 @@ public class ArchiveDocumentTextIndexServiceImpl
         job.setCreatedAt(now);
         job.setUpdatedAt(now);
         save(job);
-        publish(job, "文本索引任务已创建，共 " + total + " 份待处理");
+        publish(job, "索引任务已创建（" + mode + "），共 " + total + " 份待处理");
         if (total == 0) {
             complete(job, "没有缺失 OCR 的正式档案");
             return job;
@@ -165,7 +173,7 @@ public class ArchiveDocumentTextIndexServiceImpl
             job.setStatus(ArchiveTextIndexJobStatus.RUNNING);
             job.setStartedAt(LocalDateTime.now());
         }
-        List<ArchiveDocument> documents = loadMissing(job.getHallId(), value(job.getBatchSize(), DEFAULT_BATCH_SIZE));
+        List<ArchiveDocument> documents = loadCandidates(job, value(job.getBatchSize(), DEFAULT_BATCH_SIZE));
         if (documents.isEmpty()) {
             complete(job, "文本索引任务完成");
             return;
@@ -175,10 +183,17 @@ public class ArchiveDocumentTextIndexServiceImpl
         List<Long> indexedDocumentIds = new ArrayList<>();
         for (ArchiveDocument document : documents) {
             try {
-                if (hasOcrText(document)) {
-                    continue;
+                ArchiveTextIndexMode mode = job.getMode() == null ? ArchiveTextIndexMode.MISSING : job.getMode();
+                if (mode == ArchiveTextIndexMode.SEARCH_ONLY) {
+                    if (!hasOcrText(document)) {
+                        throw new BizException("档案尚无页级 OCR，不能仅同步搜索索引");
+                    }
+                    archiveDocumentIndexStateService.mark(document.getId(), ArchiveDocumentIndexStatus.SEARCH_SYNCING, null);
+                    archivePageSearchService.syncDocument(document);
+                    archiveDocumentIndexStateService.mark(document.getId(), ArchiveDocumentIndexStatus.READY, null);
+                } else {
+                    indexOne(document.getId());
                 }
-                indexOne(document.getId());
                 indexedDocumentIds.add(document.getId());
                 success++;
             } catch (RuntimeException ex) {
@@ -206,31 +221,38 @@ public class ArchiveDocumentTextIndexServiceImpl
             complete(job, failed > 0 ? "文本索引任务完成，部分档案处理失败" : "文本索引任务完成");
             return;
         }
-        if (countMissing(job.getHallId()) <= 0) {
+        if (job.getMode() == ArchiveTextIndexMode.MISSING && countCandidates(job.getHallId(), ArchiveTextIndexMode.MISSING, documentIds(job)) <= 0) {
             complete(job, "文本索引任务完成");
             return;
         }
         submit(job.getId());
     }
 
-    private int countMissing(Long hallId) {
-        return Math.toIntExact(archiveDocumentService.count(missingWrapper(hallId)));
+    private int countCandidates(Long hallId, ArchiveTextIndexMode mode, List<Long> documentIds) {
+        return Math.toIntExact(archiveDocumentService.count(candidateWrapper(hallId, mode, documentIds)));
     }
 
-    private List<ArchiveDocument> loadMissing(Long hallId, int limit) {
-        return archiveDocumentService.list(missingWrapper(hallId)
-                .orderByAsc(ArchiveDocument::getArchivedAt)
-                .last("LIMIT " + limit));
+    private List<ArchiveDocument> loadCandidates(ArchiveTextIndexJob job, int limit) {
+        ArchiveTextIndexMode mode = job.getMode() == null ? ArchiveTextIndexMode.MISSING : job.getMode();
+        LambdaQueryWrapper<ArchiveDocument> wrapper = candidateWrapper(job.getHallId(), mode, documentIds(job))
+                .orderByAsc(ArchiveDocument::getArchivedAt);
+        if (mode == ArchiveTextIndexMode.MISSING) {
+            return archiveDocumentService.list(wrapper.last("LIMIT " + limit));
+        }
+        return archiveDocumentService.list(wrapper.last("LIMIT " + limit + " OFFSET " + value(job.getProcessedCount(), 0)));
     }
 
-    private LambdaQueryWrapper<ArchiveDocument> missingWrapper(Long hallId) {
-        return new LambdaQueryWrapper<ArchiveDocument>()
+    private LambdaQueryWrapper<ArchiveDocument> candidateWrapper(Long hallId, ArchiveTextIndexMode mode, List<Long> documentIds) {
+        LambdaQueryWrapper<ArchiveDocument> wrapper = new LambdaQueryWrapper<ArchiveDocument>()
                 .eq(ArchiveDocument::getStatus, ArchiveDocumentStatus.ACTIVE)
-                .eq(hallId != null, ArchiveDocument::getHallId, hallId)
-                .and(inner -> inner
-                        .isNull(ArchiveDocument::getOcrText)
-                        .or()
-                        .eq(ArchiveDocument::getOcrText, ""));
+                .eq(hallId != null, ArchiveDocument::getHallId, hallId);
+        if (!documentIds.isEmpty()) {
+            wrapper.in(ArchiveDocument::getId, documentIds);
+        }
+        if (mode == ArchiveTextIndexMode.MISSING) {
+            wrapper.and(inner -> inner.isNull(ArchiveDocument::getOcrText).or().eq(ArchiveDocument::getOcrText, ""));
+        }
+        return wrapper;
     }
 
     private void submit(Long jobId) {
@@ -286,6 +308,32 @@ public class ArchiveDocumentTextIndexServiceImpl
 
     private boolean hasOcrText(ArchiveDocument document) {
         return document.getOcrText() != null && !document.getOcrText().isBlank();
+    }
+
+    private List<Long> normalizeDocumentIds(List<Long> documentIds) {
+        if (documentIds == null) {
+            return List.of();
+        }
+        return documentIds.stream().filter(java.util.Objects::nonNull).distinct().limit(100).toList();
+    }
+
+    private String writeDocumentIds(List<Long> documentIds) {
+        try {
+            return objectMapper.writeValueAsString(documentIds);
+        } catch (Exception ex) {
+            throw new BizException("保存索引任务文档范围失败");
+        }
+    }
+
+    private List<Long> documentIds(ArchiveTextIndexJob job) {
+        if (job.getDocumentIdsJson() == null || job.getDocumentIdsJson().isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(job.getDocumentIdsJson(), new TypeReference<>() { });
+        } catch (Exception ex) {
+            throw new BizException("读取索引任务文档范围失败");
+        }
     }
 
     private int value(Integer value, int fallback) {
