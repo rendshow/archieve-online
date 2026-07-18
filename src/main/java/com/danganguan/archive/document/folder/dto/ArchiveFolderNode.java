@@ -1,8 +1,13 @@
 package com.danganguan.archive.document.folder.dto;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@Getter
+@Setter
 public class ArchiveFolderNode {
     private String name;
     private String path;
@@ -17,14 +22,9 @@ public class ArchiveFolderNode {
         this.path = path;
     }
 
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getPath() { return path; }
-    public void setPath(String path) { this.path = path; }
-    public int getDocumentCount() { return documentCount; }
-    public void setDocumentCount(int documentCount) { this.documentCount = documentCount; }
-    public List<ArchiveFolderNode> getChildren() { return children; }
-    public void setChildren(List<ArchiveFolderNode> children) { this.children = children; }
+
+
+
 
     public void incrementDocumentCount() {
         this.documentCount++;

@@ -1,5 +1,8 @@
 package com.danganguan.archive.common.config;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -7,71 +10,26 @@ import java.math.BigDecimal;
 
 @Component
 @ConfigurationProperties(prefix = "archive.boundary")
+@Getter
+@Setter
 public class BoundaryDetectionProperties {
     private String provider = "rule";
     private BigDecimal ruleConfidenceThreshold = new BigDecimal("0.80");
     private OpenAiCompatible openaiCompatible = new OpenAiCompatible();
 
-    public String getProvider() {
-        return provider;
-    }
 
-    public void setProvider(String provider) {
-        this.provider = provider;
-    }
 
-    public BigDecimal getRuleConfidenceThreshold() {
-        return ruleConfidenceThreshold;
-    }
 
-    public void setRuleConfidenceThreshold(BigDecimal ruleConfidenceThreshold) {
-        this.ruleConfidenceThreshold = ruleConfidenceThreshold;
-    }
-
-    public OpenAiCompatible getOpenaiCompatible() {
-        return openaiCompatible;
-    }
-
-    public void setOpenaiCompatible(OpenAiCompatible openaiCompatible) {
-        this.openaiCompatible = openaiCompatible;
-    }
-
+    @Getter
+    @Setter
     public static class OpenAiCompatible {
         private String baseUrl = "https://api.openai.com/v1/chat/completions";
         private String apiKey;
         private String model;
         private int timeoutSeconds = 60;
 
-        public String getBaseUrl() {
-            return baseUrl;
-        }
 
-        public void setBaseUrl(String baseUrl) {
-            this.baseUrl = baseUrl;
-        }
 
-        public String getApiKey() {
-            return apiKey;
-        }
 
-        public void setApiKey(String apiKey) {
-            this.apiKey = apiKey;
-        }
-
-        public String getModel() {
-            return model;
-        }
-
-        public void setModel(String model) {
-            this.model = model;
-        }
-
-        public int getTimeoutSeconds() {
-            return timeoutSeconds;
-        }
-
-        public void setTimeoutSeconds(int timeoutSeconds) {
-            this.timeoutSeconds = timeoutSeconds;
-        }
     }
 }
