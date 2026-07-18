@@ -8,6 +8,7 @@ OpenSearch 只保存可重建的页级检索索引。正式档案原件仍在 Mi
 
 ```bash
 mkdir -p data/opensearch
+sudo chown -R 1000:1000 data/opensearch
 sudo sysctl -w vm.max_map_count=262144
 umask 077
 printf 'OPENSEARCH_INITIAL_ADMIN_PASSWORD=%s\n' '替换为至少 8 位的强密码' > .env
