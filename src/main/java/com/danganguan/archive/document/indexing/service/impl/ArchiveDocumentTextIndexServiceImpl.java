@@ -19,6 +19,7 @@ import com.danganguan.archive.document.page.service.ArchiveDocumentPageIndexServ
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import com.danganguan.archive.event.ArchiveRealtimeEvent;
 import com.danganguan.archive.event.ArchiveRealtimeEventPublisher;
+import com.danganguan.archive.search.service.ArchivePageSearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
@@ -43,6 +44,7 @@ public class ArchiveDocumentTextIndexServiceImpl
     private final ArchiveStorageProperties properties;
     private final RabbitTemplate rabbitTemplate;
     private final ArchiveRealtimeEventPublisher eventPublisher;
+    private final ArchivePageSearchService archivePageSearchService;
 
     @Override
     public ArchiveDocument indexOne(Long documentId) {
@@ -57,6 +59,7 @@ public class ArchiveDocumentTextIndexServiceImpl
         document.setAiSummary(firstNonBlank(document.getAiSummary(), "已完成页级 OCR 索引。"));
         document.setUpdatedAt(LocalDateTime.now());
         archiveDocumentService.updateById(document);
+        archivePageSearchService.syncDocument(document);
         eventPublisher.publish(ArchiveRealtimeEvent.archiveDocumentIndexed(
                 document.getHallId(),
                 document.getId(),

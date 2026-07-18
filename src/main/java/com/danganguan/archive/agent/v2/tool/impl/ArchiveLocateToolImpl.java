@@ -13,6 +13,8 @@ import com.danganguan.archive.document.fact.enums.ArchiveFactType;
 import com.danganguan.archive.document.fact.service.ArchiveDocumentFactQueryService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
 import com.danganguan.archive.task.enums.OutputFormat;
+import com.danganguan.archive.search.dto.ArchivePageSearchHit;
+import com.danganguan.archive.search.service.ArchivePageSearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -36,6 +38,7 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
 
     private final ArchiveDocumentFactQueryService archiveDocumentFactQueryService;
     private final ArchiveDocumentService archiveDocumentService;
+    private final ArchivePageSearchService archivePageSearchService;
 
     @Override
     public LocateResult locate(String message, AgentResolvedScope scope) {
@@ -48,6 +51,9 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
             documents = locateByMetadata(message, scope);
         }
         if (documents.isEmpty()) {
+            documents = locateByPageText(message, scope);
+        }
+        if (documents.isEmpty()) {
             return new LocateResult("当前范围内没有找到匹配的正式档案。已使用姓名、学号、材料类型、档号和题名线索检索。", List.of(), evidence);
         }
         String answer = "找到 %d 份匹配档案：%s".formatted(documents.size(), documents.stream()
@@ -56,6 +62,15 @@ public class ArchiveLocateToolImpl implements ArchiveLocateTool {
                 .reduce((left, right) -> left + "；" + right)
                 .orElse(""));
         return new LocateResult(answer, documents, evidence);
+    }
+
+    private List<AgentDocumentReference> locateByPageText(String message, AgentResolvedScope scope) {
+        Map<Long, AgentDocumentReference> documents = new LinkedHashMap<>();
+        for (ArchivePageSearchHit hit : archivePageSearchService.search(scope, message, LIMIT)) {
+            documents.putIfAbsent(hit.documentId(), new AgentDocumentReference(hit.documentId(), hit.hallId(), hit.title(),
+                    hit.folderPath(), null));
+        }
+        return List.copyOf(documents.values());
     }
 
     private List<ArchiveFactEvidence> locateByFacts(String message, AgentResolvedScope scope) {
