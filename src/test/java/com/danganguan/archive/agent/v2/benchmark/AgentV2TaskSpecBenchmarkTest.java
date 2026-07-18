@@ -34,7 +34,8 @@ class AgentV2TaskSpecBenchmarkTest {
         var task = planner.plan(item.message(), item.context());
         return task.intent() == AgentTaskIntent.valueOf(item.intent())
                 && task.toolName().equals(item.toolName())
-                && task.evidenceRequirement() == AgentEvidenceRequirement.valueOf(item.evidenceRequirement());
+                && task.evidenceRequirement() == AgentEvidenceRequirement.valueOf(item.evidenceRequirement())
+                && !task.operations().isEmpty();
     }
 
     private List<BenchmarkCase> loadCases() throws Exception {

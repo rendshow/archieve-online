@@ -99,6 +99,7 @@ public class AgentV2ExecutionServiceImpl implements AgentV2ExecutionService {
                         "requestId", result.requestId(),
                         "intent", result.task().intent(),
                         "toolName", result.task().toolName(),
+                        "operations", result.task().operations(),
                         "scope", result.task().scope(),
                         "status", result.status(),
                         "answerSource", result.answerSource()
