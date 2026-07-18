@@ -23,6 +23,7 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
         ensureFinishedArchiveImportJobTable();
         ensureAgentTables();
         ensureArchiveTextIndexJobTable();
+        ensureArchiveDocumentIndexStateTable();
         if (!tableExists("archive_document")) {
             return;
         }
@@ -117,6 +118,24 @@ public class ArchiveSchemaCompatibilityInitializer implements ApplicationRunner 
                   INDEX idx_archive_text_index_job_hall_id (hall_id),
                   INDEX idx_archive_text_index_job_status (status),
                   INDEX idx_archive_text_index_job_created_at (created_at)
+                )
+                """);
+    }
+
+    private void ensureArchiveDocumentIndexStateTable() throws SQLException {
+        if (tableExists("archive_document_index_state")) {
+            return;
+        }
+        jdbcTemplate.execute("""
+                CREATE TABLE archive_document_index_state (
+                  document_id BIGINT PRIMARY KEY,
+                  status VARCHAR(32) NOT NULL,
+                  index_version VARCHAR(64) NOT NULL,
+                  attempt_count INT NOT NULL DEFAULT 0,
+                  last_error VARCHAR(1000),
+                  indexed_at DATETIME,
+                  updated_at DATETIME NOT NULL,
+                  INDEX idx_archive_document_index_state_status (status)
                 )
                 """);
     }

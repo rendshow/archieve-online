@@ -14,6 +14,8 @@ import com.danganguan.archive.document.indexing.entity.ArchiveTextIndexJob;
 import com.danganguan.archive.document.indexing.enums.ArchiveTextIndexJobStatus;
 import com.danganguan.archive.document.indexing.mapper.ArchiveTextIndexJobMapper;
 import com.danganguan.archive.document.indexing.service.ArchiveDocumentTextIndexService;
+import com.danganguan.archive.document.indexing.service.ArchiveDocumentIndexStateService;
+import com.danganguan.archive.document.indexing.enums.ArchiveDocumentIndexStatus;
 import com.danganguan.archive.document.page.dto.ArchiveDocumentPageIndexResult;
 import com.danganguan.archive.document.page.service.ArchiveDocumentPageIndexService;
 import com.danganguan.archive.document.service.ArchiveDocumentService;
@@ -45,6 +47,7 @@ public class ArchiveDocumentTextIndexServiceImpl
     private final RabbitTemplate rabbitTemplate;
     private final ArchiveRealtimeEventPublisher eventPublisher;
     private final ArchivePageSearchService archivePageSearchService;
+    private final ArchiveDocumentIndexStateService archiveDocumentIndexStateService;
 
     @Override
     public ArchiveDocument indexOne(Long documentId) {
@@ -52,14 +55,23 @@ public class ArchiveDocumentTextIndexServiceImpl
         if (document == null) {
             throw new BizException("正式档案不存在");
         }
-        ArchiveDocumentPageIndexResult result = archiveDocumentPageIndexService.rebuild(document);
-        archiveDocumentFactExtractionService.rebuild(document);
-        document.setOcrText(blankToNull(result.mergedText()));
-        document.setPageCount(result.pageCount());
-        document.setAiSummary(firstNonBlank(document.getAiSummary(), "已完成页级 OCR 索引。"));
-        document.setUpdatedAt(LocalDateTime.now());
-        archiveDocumentService.updateById(document);
-        archivePageSearchService.syncDocument(document);
+        try {
+            archiveDocumentIndexStateService.mark(documentId, ArchiveDocumentIndexStatus.OCR_RUNNING, null);
+            ArchiveDocumentPageIndexResult result = archiveDocumentPageIndexService.rebuild(document);
+            archiveDocumentIndexStateService.mark(documentId, ArchiveDocumentIndexStatus.EXTRACTING, null);
+            archiveDocumentFactExtractionService.rebuild(document);
+            document.setOcrText(blankToNull(result.mergedText()));
+            document.setPageCount(result.pageCount());
+            document.setAiSummary(firstNonBlank(document.getAiSummary(), "已完成页级 OCR 索引。"));
+            document.setUpdatedAt(LocalDateTime.now());
+            archiveDocumentService.updateById(document);
+            archiveDocumentIndexStateService.mark(documentId, ArchiveDocumentIndexStatus.SEARCH_SYNCING, null);
+            archivePageSearchService.syncDocument(document);
+            archiveDocumentIndexStateService.mark(documentId, ArchiveDocumentIndexStatus.READY, null);
+        } catch (RuntimeException ex) {
+            archiveDocumentIndexStateService.mark(documentId, ArchiveDocumentIndexStatus.FAILED, ex.getMessage());
+            throw ex;
+        }
         eventPublisher.publish(ArchiveRealtimeEvent.archiveDocumentIndexed(
                 document.getHallId(),
                 document.getId(),

@@ -159,6 +159,17 @@ CREATE TABLE IF NOT EXISTS archive_document_page (
   INDEX idx_archive_document_page_document (archive_document_id)
 );
 
+CREATE TABLE IF NOT EXISTS archive_document_index_state (
+  document_id BIGINT PRIMARY KEY,
+  status VARCHAR(32) NOT NULL,
+  index_version VARCHAR(64) NOT NULL,
+  attempt_count INT NOT NULL DEFAULT 0,
+  last_error VARCHAR(1000),
+  indexed_at DATETIME,
+  updated_at DATETIME NOT NULL,
+  INDEX idx_archive_document_index_state_status (status)
+);
+
 CREATE TABLE IF NOT EXISTS archive_extracted_fact (
   id BIGINT PRIMARY KEY,
   archive_document_id BIGINT NOT NULL,
